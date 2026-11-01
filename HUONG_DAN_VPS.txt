@@ -1,0 +1,36 @@
+MIZZE CONNECT — BỘ CHẠY VPS WINDOWS x64
+
+1. Chép TOÀN BỘ thư mục này lên VPS, ví dụ Desktop/Mizze Connect VPS.
+   Đã kèm Node, Python, Xray, cloudflared và thư viện Firebase. Không cần npm install.
+2. Bấm CHAY_VPS.bat, giữ cửa sổ mở. Chờ “Mizze Connect ready”.
+3. Bấm MO_RA_INTERNET.bat. Chờ PUBLIC URL. Đây là URL gateway thử nghiệm.
+4. Web GitHub: https://github.com/okphong582-png/hgjhgjhg
+   Import repo vào Vercel, giữ cấu hình vercel.json. Trong Environment Variables,
+   thêm hai biến trong private/VERCEL-ENV.txt vào Production và Preview, rồi Redeploy.
+   MIZZE_GATEWAY_ORIGIN là URL HTTPS của gateway đang chạy trên VPS.
+   MIZZE_WEB_PROXY_TOKEN là token riêng để xác thực yêu cầu web; không đưa vào source.
+5. Mở web Vercel, nhập key, thêm Happ rồi kết nối VPN trong Happ.
+   Phím tắt copy trên web dùng đúng từng key. Mỗi mục có thời gian tự tắt 0–3600 giây.
+   Bấm Lưu riêng từng mục; 0 = tắt thủ công. Cấu hình lưu theo key, khởi động lại mặc định OFF.
+
+Tên miền: gắn mizzeproxy.store vào project Vercel và dùng DNS được Vercel cung cấp.
+Để gateway ổn định: dùng Cloudflare Tunnel có tên cố định gateway.mizzeproxy.store
+trỏ HTTP về localhost:8788, sau đó đặt origin đó ở private/public-origin.json:
+{"origin":"https://gateway.mizzeproxy.store"}
+Phải dừng gateway bằng DUNG_VPS trước khi sửa, sao lưu file cũ, rồi chạy lại.
+Đổi MIZZE_GATEWAY_ORIGIN trên Vercel sang hostname mới và Redeploy.
+Happ cũ cần cập nhật/thêm lại cấu hình sau khi đổi hostname.
+Không trỏ CNAME gateway vào một URL trycloudflare tạm thời.
+
+MO_BANG_PC.bat: mở bảng quản trị local, chọn key cần điều khiển.
+DUNG_VPS.bat: yêu cầu dừng và ngăn supervisor tự bật lại.
+Supervisor chỉ phục hồi sau lỗi tiến trình, tối đa 5 lần/phút; không bảo đảm không sập.
+Giới hạn hiện tại: 128 kết nối tunnel, 512 flow, 64 MB tổng hàng đợi; cần đo tải thật.
+Quick Tunnel là bản thử, có thể đổi URL hoặc gián đoạn, không phù hợp làm SLA khách hàng.
+Phần UDP được bọc trong WebSocket/TCP; có thể tăng trễ. Chưa kiểm thử trên iPhone/VPS này.
+Không nhận sự kiện bắn của bản game gốc; không khẳng định các hiệu ứng trong game.
+
+Thư mục private chứa thông tin dịch vụ key, phiên và token quản trị; chỉ giữ trên máy/VPS của bạn.
+Không upload thư mục private, backups, logs hoặc cả bộ VPS lên repo công khai.
+Không chạy đồng thời hai bộ trên cùng một máy/cổng. Không sửa proxy cũ cổng 1297.
+Mỗi lần ghi đè cấu hình có backup ZIP và kiểm tra checksum; backup ở thư mục backups.

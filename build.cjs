@@ -1,0 +1,1 @@
+const fs=require('fs');for(const file of ['dist/index.html','dist/app.js','dist/style.css','api/gateway.js','web-proxy.cjs'])if(!fs.existsSync(file))throw Error('Missing '+file);console.log('Mizze web ready. Gateway runs separately on VPS.');

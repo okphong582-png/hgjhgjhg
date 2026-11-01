@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/gateway.js": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:name",
+      "destination": "/api/gateway?route=/api/:name"
+    },
+    {
+      "source": "/sub/:token",
+      "destination": "/api/gateway?route=/sub/:token"
+    },
+    {
+      "source": "/key/:token/:feature",
+      "destination": "/api/gateway?route=/key/:token/:feature"
+    },
+    {
+      "source": "/:key/:feature",
+      "destination": "/api/gateway?route=/:key/:feature"
+    }
+  ]
+}

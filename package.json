@@ -1,0 +1,13 @@
+{
+  "name": "mizze-connect",
+  "version": "1.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node run-vps.cjs",
+    "build": "node build.cjs",
+    "test": "node --test tests/auto-off.test.cjs tests/web-proxy.test.cjs tests/packet-gate.test.cjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}

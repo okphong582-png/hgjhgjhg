@@ -1,0 +1,9 @@
+private/
+native/
+node_modules/
+backups/
+logs/
+.vercel/
+PUBLIC-URL.txt
+*.zip
+*.log
