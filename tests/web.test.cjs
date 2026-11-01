@@ -1,4 +1,4 @@
-const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('crypto'),fs=require('fs'),path=require('path');const {main}=require('../server.cjs');
+const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('crypto'),fs=require('fs'),path=require('path');const {main}=require('../gateway-server.cjs');
 test('web key -> actual native provisioning -> Happ subscription -> PC signal, with auth and quotas',{timeout:30000},async()=>{
  let hash='f'.repeat(64),record={protocol:9,credentialMode:2,enabled:true,maxDevices:1,timeMode:'firstUse',durationMs:3600000,createdAt:Date.now(),activatedAt:0,expiresAt:0},backups=0;
  const source={name:'isolated-memory-only',db:{ref:()=>({get:async()=>({val:()=>structuredClone(record)}),transaction:async f=>{let n=f(structuredClone(record));if(n===undefined)return {committed:false};record=n;return {committed:true,snapshot:{val:()=>structuredClone(record)}}}})}};

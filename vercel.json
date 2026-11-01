@@ -24,5 +24,6 @@
       "source": "/:key/:feature",
       "destination": "/api/gateway?route=/:key/:feature"
     }
-  ]
+  ],
+  "framework": null
 }
