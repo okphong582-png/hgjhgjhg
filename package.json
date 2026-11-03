@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "node build.cjs",
-    "test": "node --test tests/auto-off.test.cjs tests/web-proxy.test.cjs tests/packet-gate.test.cjs",
+    "test": "node --test tests/auto-off.test.cjs tests/web-proxy.test.cjs tests/packet-gate.test.cjs tests/security.test.cjs tests/security-flow.test.cjs",
     "start:vps": "node run-vps.cjs"
   },
   "dependencies": {

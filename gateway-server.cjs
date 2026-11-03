@@ -1,21 +1,27 @@
 const fs=require('fs'),path=require('path'),crypto=require('crypto'),http=require('http'),net=require('net'),os=require('os'),{execFileSync}=require('child_process');
 const {AutoOff}=require('./auto-off.cjs');
+const {headers:securityHeaders,RateLimiter,ExpiryGuard,sealRemember,openRemember,REMEMBER_TTL}=require('./security.cjs');
 const {verify:verifyProxy}=require('./web-proxy.cjs');
 const {configured,status}=require('./license-adapter.cjs'),policy=require('./lease-v9.cjs'),{Gateway}=require('./gateway.cjs');
-const root=__dirname,settings=JSON.parse(fs.readFileSync(path.join(root,'private/local-settings.json')));
-const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
-function backup(v){execFileSync(settings.python,[path.join(root,'backup.py'),settings.backupRoot],{input:JSON.stringify(v),stdio:['pipe','ignore','pipe'],windowsHide:true});}
-function initialBackup(){const before={};for(const f of fs.readdirSync(path.join(root,'private')))before['private/'+f]=fs.readFileSync(path.join(root,'private',f)).toString('base64');backup({path:'Mizze-Connect/runtime',before,previouslyAbsent:['private/xray-server.json','private/gateway-secret.json','private/auth.json','private/sessions.json'].filter(f=>!fs.existsSync(path.join(root,f)))});}
-function atomic(file,value){const f=path.join(root,'private',file);if(fs.existsSync(f))backup({path:'Mizze-Connect/private/'+file,previousBase64:fs.readFileSync(f).toString('base64')});const tmp=f+'.tmp';fs.writeFileSync(tmp,JSON.stringify(value),{mode:0o600});fs.renameSync(tmp,f);}
-function secret(){let f=path.join(root,'private/auth.json');if(fs.existsSync(f))return JSON.parse(fs.readFileSync(f));let v={adminToken:crypto.randomBytes(32).toString('hex')};atomic('auth.json',v);return v;}
 const lanIps=()=>Object.values(os.networkInterfaces()).flat().filter(n=>n.family==='IPv4'&&!n.internal).map(n=>n.address);
 const allowedHosts=()=>new Set(['localhost','127.0.0.1',...lanIps()]);
 function json(res,n,v){res.writeHead(n,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(v));}
 async function body(req){if(req.mizzeBody)return JSON.parse(req.mizzeBody.toString()||'{}');let chunks=[],n=0;for await(const b of req){n+=b.length;if(n>4096)throw Error('body_too_large');chunks.push(b);}return JSON.parse(Buffer.concat(chunks).toString()||'{}');}
 const messages={invalid_key:'Key không tồn tại hoặc không hợp lệ.',expired:'Key đã hết hạn.',disabled:'Key đã bị khóa.',full:'Key đã đủ thiết bị. Dùng đúng trình duyệt đã liên kết hoặc reset qua bot hỗ trợ.',gateway_not_ready:'Gateway chưa sẵn sàng.',backup_failed:'Không sao lưu được nên chưa thay đổi dữ liệu.',bad_origin:'Yêu cầu không hợp lệ.',unauthorized:'Phiên hết hạn. Nhập lại key.',unavailable:'Chưa kết nối được dịch vụ key. Thử lại sau.'};
 function fail(code){throw Error(code)}
-async function main(options={}){initialBackup();const settingsUsed={...settings,...options.settings};const proxySecret=fs.existsSync(path.join(root,'private/web-proxy-secret.json'))?JSON.parse(fs.readFileSync(path.join(root,'private/web-proxy-secret.json'))).token:null;const auth=secret(),backend=options.backend||configured(settings),gateway=new Gateway(root,settingsUsed);await gateway.start();
+async function main(options={}){
+const root=options.runtimeRoot||__dirname,settings=options.settings||JSON.parse(fs.readFileSync(path.join(root,'private/local-settings.json')));
+const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
+function backup(v){execFileSync(settings.python,[path.join(root,'backup.py'),settings.backupRoot],{input:JSON.stringify(v),stdio:['pipe','ignore','pipe'],windowsHide:true});}
+function initialBackup(){const before={};for(const f of fs.readdirSync(path.join(root,'private')))before['private/'+f]=fs.readFileSync(path.join(root,'private',f)).toString('base64');backup({path:'Mizze-Connect/runtime',before,previouslyAbsent:['private/xray-server.json','private/gateway-secret.json','private/auth.json','private/sessions.json'].filter(f=>!fs.existsSync(path.join(root,f)))});}
+function atomic(file,value){const f=path.join(root,'private',file);if(fs.existsSync(f))backup({path:'Mizze-Connect/private/'+file,previousBase64:fs.readFileSync(f).toString('base64')});const tmp=f+'.tmp';fs.writeFileSync(tmp,JSON.stringify(value),{mode:0o600});fs.renameSync(tmp,f);}
+function secret(){let f=path.join(root,'private/auth.json');if(fs.existsSync(f))return JSON.parse(fs.readFileSync(f));let v={adminToken:crypto.randomBytes(32).toString('hex')};atomic('auth.json',v);return v;}
+
+initialBackup();const settingsUsed={...settings,...options.settings};const proxySecret=fs.existsSync(path.join(root,'private/web-proxy-secret.json'))?JSON.parse(fs.readFileSync(path.join(root,'private/web-proxy-secret.json'))).token:null;const auth=secret(),backend=options.backend||configured(settings),gateway=options.gateway||new Gateway(root,settingsUsed);await gateway.start();
  const grants=new Map(),sessions=new Map(),streams=new Map(),rate=new Map(),wsConnections=new Map();const keyControls=new Map(),requestIds=new Map();let checking=false;let publicOrigin=null;const publicFile=path.join(root,'private/public-origin.json');if(options.publicOrigin!==undefined)publicOrigin=options.publicOrigin;else if(fs.existsSync(publicFile))publicOrigin=JSON.parse(fs.readFileSync(publicFile)).origin||null;const isPublicHost=h=>publicOrigin&&new URL(publicOrigin).hostname===h;const hosts=()=>new Set([...allowedHosts(),...(publicOrigin?[new URL(publicOrigin).hostname]:[])]);const closeWs=token=>{for(const sock of wsConnections.get(token)||[])sock.destroy();wsConnections.delete(token)};
+ const deadlines=new ExpiryGuard(),authRate=new RateLimiter({limit:12}),provisionRate=new RateLimiter({limit:20});
+ async function revokeSession(token,s){closeWs(token);sessions.delete(token);for(const [res,stream]of streams)if(stream.token===token){res.end();streams.delete(res);}if(![...sessions.values()].some(x=>scopeOf(x)===scopeOf(s)))autoOff.forget(scopeOf(s));await gateway.remove(s.email);persist();}
+ function trackSession(token,s){deadlines.track(token,s.expiresAt,()=>revokeSession(token,s));}
  const sessionName=options.sessionName||'sessions.json';const saved=path.join(root,'private',sessionName);if(fs.existsSync(saved))for(const [t,s]of JSON.parse(fs.readFileSync(saved)))sessions.set(t,s);
 
  const featureFile=options.featureSettingsName||'feature-settings.json';const featurePath=path.join(root,'private',featureFile);const storedSettings=fs.existsSync(featurePath)?JSON.parse(fs.readFileSync(featurePath,'utf8')):{};
@@ -26,9 +32,12 @@ async function main(options={}){initialBackup();const settingsUsed={...settings,
  const persist=()=>atomic(sessionName,[...sessions]);
  const view=email=>({gateway:gateway.ready?'ready':'offline',control:email?gateway.userState(email):gateway.control,revision:gateway.revision||0,signalUpdatedAt:gateway.signalUpdatedAt||null,receivedAt:Date.now(),timing:email?autoOff.describe(scopeOf([...sessions.values()].find(x=>x.email===email))):null,stats:gateway.stats(email),trafficVerified:false});
  function emit(){for(const [res,s]of streams){if(!sessions.has(s.token)){res.end();streams.delete(res);continue;}if(res.writableLength>65536){res.destroy();streams.delete(res);}else res.write('data: '+JSON.stringify(view(sessions.get(s.token)?.email))+'\n\n');}}
- async function authorize(s){let source=findSource(s);if(!source)return false;let r=(await source.db.ref('licensesV9/'+s.hash).get()).val();return policy.validRecord(r,Date.now())&&r.expiresAt>Date.now()&&r.devices?.[s.deviceHash]&&r.devices[s.deviceHash].claimedAt===s.claimedAt;}
- function session(req){let token=(req.headers.authorization||'').replace(/^Bearer /,'');let s=sessions.get(token);if(!s||s.expiresAt<=Date.now())fail('unauthorized');return {token,...s};}
- async function ensure(s){try{if(!await authorize(s))fail('unauthorized')}catch(e){await gateway.remove(s.email);fail(e.message==='unauthorized'?'unauthorized':'unavailable')}await gateway.add(s.uuid,s.email);const scope=s.project+':'+s.hash;if(keyControls.has(scope))gateway.setUserState(s.email,keyControls.get(scope));}
+ function rememberCookie(res,value,url){const secure=isPublicHost(url.hostname)||!!proxySecret||!['localhost','127.0.0.1'].includes(url.hostname);res.setHeader('Set-Cookie','mizze_remember='+value+'; Path=/api; Max-Age='+(value?Math.floor(REMEMBER_TTL/1000):0)+'; HttpOnly; SameSite=Strict'+(secure?'; Secure':''));}
+ function remember(res,item,deviceHash,record,label,url){rememberCookie(res,sealRemember({project:item.source.name,hash:item.hash,deviceHash,claimedAt:record.devices?.[deviceHash]?.claimedAt||0,label},auth.adminToken),url);}
+ function connectionView(token,s,url){const subscription=(publicOrigin||((url.hostname==='localhost'||url.hostname==='127.0.0.1')&&lanIps().length?'http://'+lanIps()[0]+':'+settingsUsed.webPort:url.origin))+'/sub/'+token;return {token,subscription,addUrl:'happ://add/'+subscription,expiresAt:s.expiresAt,shortcuts:Object.fromEntries(['fakelag','ghost','telekill'].map(mode=>[mode,(publicOrigin||url.origin)+'/key/'+token+'/'+mode]))};}
+ async function authorize(s){if(!Number.isSafeInteger(s.expiresAt)||s.expiresAt<=Date.now())return false;let source=findSource(s);if(!source)return false;let r=(await source.db.ref('licensesV9/'+s.hash).get()).val();return policy.validRecord(r,Date.now())&&r.expiresAt>Date.now()&&r.devices?.[s.deviceHash]&&r.devices[s.deviceHash].claimedAt===s.claimedAt;}
+ function session(req){let token=(req.headers.authorization||'').replace(/^Bearer /,'');let s=sessions.get(token);if(!s||s.expiresAt<=Date.now()){if(s)deadlines.revoke(token).catch(()=>{});fail('unauthorized');}return {token,...s};}
+ async function ensure(s){try{if(!await authorize(s))fail('unauthorized')}catch(e){for(const [token,item]of sessions)if(item.email===s.email)await deadlines.revoke(token).catch(()=>{});fail(e.message==='unauthorized'?'unauthorized':'unavailable')}await gateway.add(s.uuid,s.email);const scope=s.project+':'+s.hash;if(keyControls.has(scope))gateway.setUserState(s.email,keyControls.get(scope));}
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
@@ -39,9 +48,9 @@ async function main(options={}){initialBackup();const settingsUsed={...settings,
    const shortcut=url.pathname.match(/^\/(?:key\/)?([^/]+)\/(fakelag|ghost|telekill)$/);
    if(req.method==='GET'&&shortcut){
     if(/prefetch/i.test(String(req.headers.purpose||req.headers['sec-purpose']||'')))fail('bad_origin');
-    const credential=decodeURIComponent(shortcut[1]),mode=shortcut[2];let targets=[];
+    const credential=decodeURIComponent(shortcut[1]),mode=shortcut[2];if(!/^[a-f0-9]{64}$/.test(credential))fail('unauthorized');let targets=[];
     if(/^[a-f0-9]{64}$/.test(credential)&&sessions.has(credential))targets=[sessions.get(credential)];
-    else {if(!/^[a-zA-Z0-9_-]{6,180}$/.test(credential))fail('invalid_key');let item;try{item=await backend.lookup({key:credential.toUpperCase()})}catch{fail('unavailable')};if(!item||status(item.record)!=='active')fail('invalid_key');targets=[...sessions.values()].filter(x=>x.project===item.source.name&&x.hash===item.hash);}
+
     if(!targets.length)fail('unauthorized');const primary=targets[0];targets=[...sessions.values()].filter(x=>x.project===primary.project&&x.hash===primary.hash);for(const item of targets)await ensure(item);
     const scope=targets[0].project+':'+targets[0].hash,rid=url.searchParams.get('rid');if(rid&&!/^[a-zA-Z0-9_-]{1,80}$/.test(rid))fail('bad_origin');const requestKey=scope+':'+mode+':'+rid;
     if(rid&&requestIds.has(requestKey)&&Date.now()-requestIds.get(requestKey).at<60000){json(res,200,requestIds.get(requestKey).response);return;}
@@ -49,23 +58,40 @@ async function main(options={}){initialBackup();const settingsUsed={...settings,
     autoOff.set(scope,next);
     const response={ok:true,feature:mode,enabled:next[mode],state:next[mode]?'ON':'OFF',control:next,timing:autoOff.describe(scope),scope:'this-key',receivedAt:Date.now()};if(rid){if(requestIds.size>=1024)requestIds.delete(requestIds.keys().next().value);requestIds.set(requestKey,{at:Date.now(),response});}json(res,200,response);return;
    }
+   if(req.method==='POST'&&url.pathname==='/api/forget'){rememberCookie(res,'',url);json(res,200,{ok:true});return;}
+   if(req.method==='POST'&&url.pathname==='/api/resume'){
+    if(!provisionRate.take('resume:'+ip)){res.setHeader('Retry-After','60');json(res,429,{error:'Thao tác quá nhanh. Thử lại sau.'});return;}
+    const b=await body(req),cookie=String(req.headers.cookie||'').match(/(?:^|;\s*)mizze_remember=([^;]+)/),savedRemember=openRemember(cookie?.[1],auth.adminToken);
+    if(!savedRemember||!/^[a-f0-9]{32}$/.test(b.deviceId||'')||Object.keys(b).some(k=>k!=='deviceId')||sha('mizze-happ-browser-v1\n'+b.deviceId)!==savedRemember.deviceHash){rememberCookie(res,'',url);fail('unauthorized');}
+    const source=backend.sources.find(x=>x.name===savedRemember.project);let record;try{record=source&&(await source.db.ref('licensesV9/'+savedRemember.hash).get()).val();}catch{fail('unavailable');}
+    const st=status(record),claimed=record?.devices?.[savedRemember.deviceHash]?.claimedAt||0;
+    if(!['active','pending'].includes(st)||claimed!==savedRemember.claimedAt||(!claimed&&st!=='pending')){rememberCookie(res,'',url);fail('unauthorized');}
+    const request={keyHash:savedRemember.hash,deviceHash:savedRemember.deviceHash,nonce:crypto.randomBytes(16).toString('hex'),claim:true};
+    if(!policy.bind(record,request,Date.now())){rememberCookie(res,'',url);fail('unauthorized');}if(!gateway.ready)fail('gateway_not_ready');
+    const item={source,hash:savedRemember.hash,record},grant=crypto.randomBytes(24).toString('hex');if(grants.size>1000)grants.clear();grants.set(grant,{item,deviceHash:savedRemember.deviceHash,request,at:now,label:savedRemember.label});
+    const existing=[...sessions].find(([token,s])=>s.project===source.name&&s.hash===item.hash&&s.deviceHash===savedRemember.deviceHash&&s.claimedAt===claimed&&s.expiresAt>now);
+    if(existing)await ensure(existing[1]);
+    json(res,200,{grant,status:st,expiresAt:record.expiresAt||null,startsOnAdd:st==='pending',keyLabel:savedRemember.label,connection:existing?connectionView(existing[0],existing[1],url):null});return;
+   }
    if(req.method==='POST'&&url.pathname==='/api/login'){
-    let b=await body(req);if(typeof b.key!=='string'||b.key.length>180||!/^[a-f0-9]{32}$/.test(b.deviceId||''))fail('invalid_key');let key=b.key.trim().toUpperCase();if(!/^[A-Z0-9_-]{6,180}$/.test(key))fail('invalid_key');
+    if(!authRate.take(ip)){res.setHeader('Retry-After','60');json(res,429,{error:'Thao tác quá nhanh. Thử lại sau.'});return;}
+    let b=await body(req);if(Object.keys(b).some(k=>!['key','deviceId'].includes(k))||typeof b.key!=='string'||b.key.length>180||!/^[a-f0-9]{32}$/.test(b.deviceId||''))fail('invalid_key');let key=b.key.trim().toUpperCase();if(!/^[A-Z0-9_-]{6,180}$/.test(key))fail('invalid_key');
     let item;try{item=await backend.lookup({key})}catch{fail('unavailable')};if(!item)fail('invalid_key');let st=status(item.record);if(!['pending','active'].includes(st))fail(st==='missing'?'invalid_key':st);
     let deviceHash=sha('mizze-happ-browser-v1\n'+b.deviceId),request={keyHash:item.hash,deviceHash,nonce:crypto.randomBytes(16).toString('hex'),claim:true};if(!policy.bind(item.record,request,Date.now()))fail('full');
-    if(!gateway.ready)fail('gateway_not_ready');if(grants.size>1000)grants.clear();let grant=crypto.randomBytes(24).toString('hex');grants.set(grant,{item,deviceHash,request,at:now});
+    if(!gateway.ready)fail('gateway_not_ready');if(grants.size>1000)grants.clear();let grant=crypto.randomBytes(24).toString('hex');grants.set(grant,{item,deviceHash,request,at:now,label:key.slice(0,4)+'••••'+key.slice(-4)});remember(res,item,deviceHash,item.record,key.slice(0,4)+'••••'+key.slice(-4),url);
     json(res,200,{grant,status:st,durationMs:item.record.durationMs||null,expiresAt:item.record.expiresAt||null,startsOnAdd:st==='pending',message:st==='pending'?'Key hợp lệ. Bấm Add Happ sẽ kích hoạt và liên kết trình duyệt này.':'Key còn hạn. Bấm Add Happ để lấy cấu hình.'});return;
    }
    if(req.method==='POST'&&url.pathname==='/api/provision'){
-    let b=await body(req),g=grants.get(b.grant);if(!g||now-g.at>300000)fail('unauthorized');if(!gateway.ready)fail('gateway_not_ready');
+    if(!provisionRate.take(ip)){res.setHeader('Retry-After','60');json(res,429,{error:'Thao tác quá nhanh. Thử lại sau.'});return;}
+    let b=await body(req);if(typeof b.grant!=='string'||!/^[a-f0-9]{48}$/.test(b.grant)||Object.keys(b).some(k=>k!=='grant'))fail('unauthorized');let g=grants.get(b.grant);if(!g||now-g.at>300000)fail('unauthorized');if(!gateway.ready)fail('gateway_not_ready');
     const {item,request,deviceHash}=g;let ref=item.source.db.ref('licensesV9/'+item.hash);let record;
     for(let i=0;i<3;i++){let old=(await ref.get()).val(),next=policy.bind(old,request,Date.now());if(!next)fail('full');try{await backend.backup(item.source.name,item.hash,old)}catch{fail('backup_failed')};let prior=JSON.stringify(old),matched=false;
      let tx=await ref.transaction(v=>{if(v===null)return null;if(JSON.stringify(v)!==prior)return;matched=true;return policy.bind(v,request,Date.now());});if(tx.committed&&matched&&tx.snapshot.val()){record=tx.snapshot.val();break;}}
     if(!record)fail('unavailable');
     let existing=[...sessions].find(([t,s])=>s.project===item.source.name&&s.hash===item.hash&&s.deviceHash===deviceHash&&s.claimedAt===record.devices[deviceHash].claimedAt);
     let token=existing?.[0]||crypto.randomBytes(32).toString('hex'),uuid=existing?.[1].uuid||crypto.randomUUID(),email=sha(item.source.name+':'+item.hash+':'+deviceHash+':'+record.devices[deviceHash].claimedAt).slice(0,40)+'@mizze';
-    await gateway.add(uuid,email);let s={project:item.source.name,hash:item.hash,deviceHash,claimedAt:record.devices[deviceHash].claimedAt,uuid,email,expiresAt:record.expiresAt};sessions.set(token,s);persist();grants.delete(b.grant);
-    let subscription=(publicOrigin||((url.hostname==='localhost'||url.hostname==='127.0.0.1')&&lanIps().length?'http://'+lanIps()[0]+':'+settingsUsed.webPort:url.origin))+'/sub/'+token;json(res,200,{token,subscription,addUrl:'happ://add/'+subscription,expiresAt:s.expiresAt,shortcuts:Object.fromEntries(['fakelag','ghost','telekill'].map(mode=>[mode,(publicOrigin||url.origin)+'/key/'+token+'/'+mode]))});return;
+    await gateway.add(uuid,email);let s={project:item.source.name,hash:item.hash,deviceHash,claimedAt:record.devices[deviceHash].claimedAt,uuid,email,expiresAt:record.expiresAt};sessions.set(token,s);trackSession(token,s);persist();grants.delete(b.grant);
+    remember(res,item,deviceHash,record,g.label||'Key đã lưu',url);json(res,200,connectionView(token,s,url));return;
    }
    if(req.method==='GET'&&url.pathname.startsWith('/sub/')){let token=url.pathname.slice(5),s=sessions.get(token);if(!s)fail('unauthorized');await ensure(s);
     res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','profile-title':'Mizze','subscription-userinfo':'upload=0; download=0; total=0; expire='+Math.floor(s.expiresAt/1000),'profile-update-interval':'1'});res.end((publicOrigin?gateway.wsUri(s.uuid,new URL(publicOrigin).hostname,token):gateway.uri(s.uuid,url.hostname))+'\n');return;}
@@ -81,7 +107,7 @@ async function main(options={}){initialBackup();const settingsUsed={...settings,
     if(req.method==='POST'){let b=await body(req);if(Object.keys(b).some(k=>!['fakelag','ghost','telekill','session'].includes(k))||['fakelag','ghost','telekill'].some(k=>typeof b[k]!=='boolean'))fail('bad_origin');const selected=sessions.get(b.session);if(!selected)fail('unauthorized');const scoped={fakelag:b.fakelag,ghost:b.ghost,telekill:b.telekill};const scope=selected.project+':'+selected.hash;for(const item of sessions.values())if(item.project===selected.project&&item.hash===selected.hash)await ensure(item);autoOff.set(scope,scoped);}
     const selected=sessions.get(url.searchParams.get('session'));json(res,200,{...view(selected?.email),sessions:sessions.size,clients:[...sessions].map(([token,item],i)=>({session:token,label:'Key '+(i+1)+' · '+item.hash.slice(0,8),control:gateway.userState(item.email)}))});return;
    }
-   if(req.method==='GET'){if(isPublicHost(url.hostname)&&['/pc','/pc.js'].includes(url.pathname)){json(res,404,{error:'Not found'});return;}let files={'/':'index.html','/pc':'pc.html','/app.js':'app.js','/pc.js':'pc.js','/style.css':'style.css'};let f=files[url.pathname];if(f){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type',f.endsWith('.js')?'text/javascript; charset=utf-8':f.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8');res.end(fs.readFileSync(path.join(root,'dist',f)));return;}}
+   if(req.method==='GET'){if(isPublicHost(url.hostname)&&['/pc','/pc.js'].includes(url.pathname)){json(res,404,{error:'Not found'});return;}let files={'/':'index.html','/pc':'pc.html','/app.js':'app.js','/pc.js':'pc.js','/style.css':'style.css','/logo-mizze.jpg':'logo-mizze.jpg'};let f=files[url.pathname];if(f){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type',f.endsWith('.js')?'text/javascript; charset=utf-8':f.endsWith('.css')?'text/css; charset=utf-8':f.endsWith('.jpg')?'image/jpeg':'text/html; charset=utf-8');res.end(fs.readFileSync(path.join(root,'dist',f)));return;}}
    json(res,404,{error:'Không tìm thấy trang.'});
   }catch(e){json(res,e.message==='unauthorized'?401:400,{error:messages[e.message]||'Không hoàn tất được thao tác. Kiểm tra gateway và thử lại.'});}
  });
@@ -95,9 +121,10 @@ async function main(options={}){initialBackup();const settingsUsed={...settings,
  await new Promise((ok,no)=>{server.once('error',no);server.listen(settingsUsed.webPort,'0.0.0.0',ok);});
  console.log('Mizze Connect ready: http://localhost:'+settingsUsed.webPort);console.log('Gateway TCP/UDP: '+settingsUsed.tunnelPort+'; PC and shortcut controls are isolated per key.');console.log('Local phone URLs: '+lanIps().map(ip=>'http://'+ip+':'+settingsUsed.webPort).join(', '));
  if(options.writeShortcut!==false)fs.writeFileSync(path.join(root,'private/open-pc.url'),'[InternetShortcut]\r\nURL=http://localhost:'+settingsUsed.webPort+'/pc#'+auth.adminToken+'\r\n');
- const pulse=setInterval(emit,5000),watch=setInterval(async()=>{if(checking)return;checking=true;let changed=false;try{for(const [token,s]of sessions){try{const ok=await authorize(s);if(!ok){await gateway.remove(s.email);closeWs(token);sessions.delete(token);changed=true;if(![...sessions.values()].some(x=>scopeOf(x)===scopeOf(s)))autoOff.forget(scopeOf(s));}else if(gateway.ready)await ensure(s);}catch{gateway.maintenanceErrors=(gateway.maintenanceErrors||0)+1;}}if(changed)persist();}catch{gateway.maintenanceErrors=(gateway.maintenanceErrors||0)+1;}finally{checking=false}},30000);
- for(const [token,s]of sessions){try{if(await authorize(s))await gateway.add(s.uuid,s.email);else sessions.delete(token)}catch{sessions.delete(token)}}
- async function stop(exit=false){autoOff.close();clearInterval(pulse);clearInterval(watch);for(const res of streams.keys())res.end();for(const token of wsConnections.keys())closeWs(token);await new Promise(ok=>server.close(ok));await gateway.stop();if(exit)process.exit(0)}const sig=()=>stop(true);process.on('SIGINT',sig);process.on('SIGTERM',sig);return {server,gateway,autoOff,stop:async()=>{process.off('SIGINT',sig);process.off('SIGTERM',sig);await stop();}};
+ const pulse=setInterval(emit,5000),watch=setInterval(async()=>{if(checking)return;checking=true;try{for(const [token,s]of sessions){try{if(!await authorize(s))await deadlines.revoke(token);else if(gateway.ready)await ensure(s);}catch{gateway.maintenanceErrors=(gateway.maintenanceErrors||0)+1;await deadlines.revoke(token).catch(()=>{});}}}finally{checking=false}},options.recheckIntervalMs||30000);
+ for(const [token,s]of sessions){trackSession(token,s);try{if(await authorize(s))await gateway.add(s.uuid,s.email);else await deadlines.revoke(token)}catch{await deadlines.revoke(token).catch(()=>{})}}
+
+ async function stop(exit=false){deadlines.close();autoOff.close();clearInterval(pulse);clearInterval(watch);for(const res of streams.keys())res.end();for(const token of wsConnections.keys())closeWs(token);await new Promise(ok=>server.close(ok));await gateway.stop();if(exit)process.exit(0)}const sig=()=>stop(true);process.on('SIGINT',sig);process.on('SIGTERM',sig);return {server,gateway,autoOff,stop:async()=>{process.off('SIGINT',sig);process.off('SIGTERM',sig);await stop();}};
 }
 if(require.main===module)main().catch(()=>{console.error('Mizze Connect failed to start. Check private settings, ports and network. No customer credentials logged.');process.exit(1)});
 module.exports={main};
