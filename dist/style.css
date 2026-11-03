@@ -14,3 +14,57 @@ body.portal{--mizze-logo:url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD
 .portal .portal-message{margin-top:16px;}
 
 .portal .timer-form{padding:14px 0 16px;margin-top:12px;border-bottom:1px solid #303030}.portal .timer-form label{margin-top:0}.portal .timer-row{display:flex;gap:9px;align-items:center}.portal .timer-row input{min-width:70px;width:95px;font-size:16px;height:42px;padding:9px 10px;background:#0b0b0b;border:1px solid #3c3c3c;border-radius:9px;color:#eee}.portal .timer-row>span{font-size:11px;color:#aaa}.portal .timer-row button{margin-left:auto;background:#e9e9e7;color:#111;border:0;border-radius:9px;min-height:42px;padding:9px 12px;font-size:11px;cursor:pointer}.portal .timer-row button:disabled{opacity:.5}.portal .portal-card .timer-hint{font-size:10px;color:#999;margin-top:10px}.portal .portal-card .timer-state{font-size:11px;color:#ddd;margin-top:8px;min-height:18px}
+
+/* Compact portal: short labels, readable type, details on demand. */
+.portal .login-card{border-radius:24px;padding-bottom:22px}
+.portal .login-card h1{font-size:27px;letter-spacing:-.7px;margin-bottom:8px}
+.portal .login-intro{font-size:13px;margin-bottom:24px}
+.portal .portal-logo-image{width:96px;height:96px;margin-bottom:24px}
+.portal label{text-transform:none;letter-spacing:.3px;font-size:12px}
+.portal .portal-message:empty{display:none}
+.portal .portal-message{font-size:12px;line-height:1.65}
+.portal .login-bottom{font-size:11px;align-items:center}
+.portal .welcome{padding:24px 0}
+.portal .welcome h1{font-size:30px;margin-bottom:8px}
+.portal .summary-cell{min-height:100px;padding:16px}
+.portal .summary-cell>span{font-size:11px;letter-spacing:.2px;margin-bottom:10px}
+.portal .summary-cell small{font-size:10px}
+.portal .portal-card{padding:22px}
+.portal .portal-card h2{margin-top:0;margin-bottom:9px}
+.portal .portal-card p{font-size:13px;line-height:1.65}
+.portal .panel-heading{margin:6px 0 20px}
+.portal .panel-heading h2{font-size:27px;margin-top:0;margin-bottom:8px}
+.portal .panel-heading>p:last-child{font-size:13px}
+.portal .portal-details{margin-top:16px;font-size:12px;color:#aaa}
+.portal .portal-details summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;cursor:pointer;list-style:none;border-radius:8px;color:#aaa;text-align:left}
+.portal .portal-details summary::-webkit-details-marker{display:none}
+.portal .portal-details summary::after{content:'+';font-size:18px;color:#bbb}
+.portal .portal-details[open]>summary::after{content:'−'}
+.portal .portal-details summary:focus-visible{outline:2px solid #eee;outline-offset:4px}
+.portal .portal-details p{font-size:12px;line-height:1.7;color:#999;margin:8px 0 0}
+.portal .login-help{margin-top:8px}
+.portal .login-help p{text-align:left}
+.portal .login-bottom{margin-top:12px;padding-top:16px}
+.portal .shortcut-heading{margin-bottom:16px;gap:12px}
+.portal .shortcut-heading h3{font-size:18px;margin:0}
+.portal .shortcut-card .timer-form{margin-top:0;padding:0 0 14px}
+.portal .timer-form label{font-size:11px;margin-bottom:8px;letter-spacing:.2px}
+.portal .timer-row button{min-height:44px;font-size:12px;padding:10px 20px}
+.portal .timer-row input{height:44px}
+.portal .portal-card .timer-state{font-size:12px;margin-top:8px}
+.portal .shortcut-card .portal-details{margin-top:4px}
+.portal .shortcut-card .portal-outline{justify-content:space-between;min-height:46px;font-size:13px}
+.portal .small-status{font-size:11px}
+.portal .portal-modes{margin-top:14px;gap:8px}
+.portal .portal-modes>span{font-size:11px}
+.portal .portal-card .portal-note{font-size:11px;margin-top:12px}
+.portal .guide-step{display:flex;gap:14px;align-items:flex-start;padding:18px 0}
+.portal .guide-step:first-child{padding-top:0}
+.portal .guide-step:last-child{padding-bottom:0}
+.portal .guide-step+.guide-step{border-top:1px solid #303030}
+.portal .guide-step h3{margin:0 0 6px}
+.portal .guide-step p{font-size:12px}
+.portal .detail-card{margin-top:0;padding-top:10px;padding-bottom:10px}
+.portal .detail-card[open]{padding-bottom:22px}
+.portal .portal-nav button{font-size:11px;min-height:54px}
+@media(max-width:360px){.portal .portal-card{padding:18px}.portal .timer-row{gap:7px}.portal .timer-row button{padding:10px 16px}}
