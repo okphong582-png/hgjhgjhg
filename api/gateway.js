@@ -6,10 +6,10 @@ module.exports=async function handler(req,res){
  const fail=(status,message)=>{res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify({error:message}));};
  try{
   const raw=new URL(req.url,'https://portal.invalid');const targetPath=raw.searchParams.get('route');
-  if(!targetPath||!/^\/(?:api\/(?:info|login|provision|state|settings|resume|forget)|sub\/[a-f0-9]{64}|(?:key\/)?[a-f0-9]{64}\/(?:fakelag|ghost|telekill))$/.test(targetPath))return fail(404,'Không tìm thấy trang.');
-  if(req.method==='GET'&&/^\/api\/(?:login|provision|resume|forget)$/.test(targetPath))return fail(405,'Phương thức không hợp lệ.');
+  if(!targetPath||!/^\/(?:api\/(?:info|login|provision|state|settings|resume|forget|restore-test-session)|sub\/[a-f0-9]{64}|(?:key\/)?[a-f0-9]{64}\/(?:fakelag|ghost|telekill))$/.test(targetPath))return fail(404,'Không tìm thấy trang.');
+  if(req.method==='GET'&&/^\/api\/(?:login|provision|resume|forget|restore-test-session)$/.test(targetPath))return fail(405,'Phương thức không hợp lệ.');
   if(!['GET','POST'].includes(req.method))return fail(405,'Phương thức không hợp lệ.');
-  if(req.method==='POST'&&!/^\/api\/(login|provision|settings|resume|forget)$/.test(targetPath))return fail(405,'Phương thức không hợp lệ.');
+  if(req.method==='POST'&&!/^\/api\/(login|provision|settings|resume|forget|restore-test-session)$/.test(targetPath))return fail(405,'Phương thức không hợp lệ.');
   const requestIp=String(req.headers['x-vercel-forwarded-for']||req.headers['x-forwarded-for']||req.socket?.remoteAddress||'').split(',')[0].trim();
   if(targetPath==='/api/login'&&!loginRate.take(requestIp)){res.setHeader('Retry-After','60');return fail(429,'Thao tác quá nhanh. Thử lại sau.');}
   const originHeader=req.headers.origin;if(originHeader){let o=new URL(originHeader);if(o.host!==req.headers.host)return fail(403,'Yêu cầu không hợp lệ.');}

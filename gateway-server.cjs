@@ -81,6 +81,12 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
     if(!gateway.ready)fail('gateway_not_ready');if(grants.size>1000)grants.clear();let grant=crypto.randomBytes(24).toString('hex');grants.set(grant,{item,deviceHash,request,at:now,label:key.slice(0,4)+'••••'+key.slice(-4)});remember(res,item,deviceHash,item.record,key.slice(0,4)+'••••'+key.slice(-4),url);
     json(res,200,{grant,status:st,durationMs:item.record.durationMs||null,expiresAt:item.record.expiresAt||null,startsOnAdd:st==='pending',message:st==='pending'?'Key hợp lệ. Bấm Add Happ sẽ kích hoạt và liên kết trình duyệt này.':'Key còn hạn. Bấm Add Happ để lấy cấu hình.'});return;
    }
+   if(req.method==='POST'&&url.pathname==='/api/restore-test-session'){
+    const b=await body(req),g=grants.get(b.grant);if(!g||now-g.at>300000||Object.keys(b).some(k=>k!=='grant'))fail('unauthorized');
+    const existing=[...sessions].find(([token,s])=>s.project===g.item.source.name&&s.hash===g.item.hash&&s.deviceHash===g.deviceHash);
+    if(!existing){json(res,409,{error:'Chưa có phiên Happ trên trình duyệt này. Dùng đúng trình duyệt đã thêm cấu hình.'});return;}
+    const [token,s]=existing;await ensure(s);grants.delete(b.grant);json(res,200,{token,expiresAt:s.expiresAt,restored:true,newDevice:false});return;
+   }
    if(req.method==='POST'&&url.pathname==='/api/provision'){
     if(!provisionRate.take(ip)){res.setHeader('Retry-After','60');json(res,429,{error:'Thao tác quá nhanh. Thử lại sau.'});return;}
     let b=await body(req);if(typeof b.grant!=='string'||!/^[a-f0-9]{48}$/.test(b.grant)||Object.keys(b).some(k=>k!=='grant'))fail('unauthorized');let g=grants.get(b.grant);if(!g||now-g.at>300000)fail('unauthorized');if(!gateway.ready)fail('gateway_not_ready');
