@@ -24,6 +24,10 @@ module.exports=async function handler(req,res){
   const remember=String(req.headers.cookie||'').match(/(?:^|;\s*)mizze_remember=([A-Za-z0-9_.-]{1,2048})(?:;|$)/);if(remember)headers.Cookie='mizze_remember='+remember[1];
   if(req.headers.authorization)headers.Authorization=req.headers.authorization;for(const h of ['purpose','sec-purpose'])if(req.headers[h])headers[h]=req.headers[h];
   const response=await fetch(base.origin+route,{method:req.method,headers,...(req.method==='POST'?{body}:{}),redirect:'manual',signal:AbortSignal.timeout(20000)});
+  if(targetPath.startsWith('/api/')&&!String(response.headers.get('content-type')||'').toLowerCase().includes('application/json')){
+   if(response.status===429){const retry=response.headers.get('retry-after');if(/^\d{1,4}$/.test(retry||''))res.setHeader('Retry-After',retry);return fail(429,'Máy chủ đang giới hạn yêu cầu. Đợi một lúc rồi thử lại.');}
+   return fail(502,'Đường hầm tới VPS đang lỗi. Kiểm tra gateway và kết nối Internet trên VPS.');
+  }
   const cookie=response.headers.get('set-cookie');if(cookie&&cookie.startsWith('mizze_remember='))res.setHeader('Set-Cookie',cookie);
   res.statusCode=response.status;res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');for(const name of ['content-type','profile-title','subscription-userinfo','profile-update-interval']){const value=response.headers.get(name);if(value)res.setHeader(name,value);}res.end(Buffer.from(await response.arrayBuffer()));
  }catch{return fail(502,'Chưa kết nối được gateway VPS. Kiểm tra gateway và cấu hình Vercel.');}
