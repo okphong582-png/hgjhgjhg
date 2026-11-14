@@ -1,0 +1,12 @@
+{
+  "name": "mizze-connect-sach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web kết nối Happ gọn đẹp + máy chủ VPS (Xray WebSocket qua relay SOCKS5).",
+  "scripts": {
+    "build": "node build.cjs",
+    "start": "node server.cjs",
+    "test": "node --test tests/relay.test.cjs tests/vercel.test.cjs"
+  },
+  "engines": { "node": ">=20" }
+}
