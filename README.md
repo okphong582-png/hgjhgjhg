@@ -17,6 +17,8 @@ Dùng bộ VPS có hệ thống key và giữ nguyên thư mục `private`, thư
 
 Gateway gửi header `Hide-Settings: 1` khi Happ tải hồ sơ. Hồ sơ đã thêm cần cập nhật trong Happ để nhận cài đặt. Tùy chọn này ẩn phần xem và sửa cấu hình máy chủ trong Happ.
 
+Nút mở và sao chép Happ trên web dùng `happ://crypt5/…`. Vercel xác thực phiên ở gateway rồi gửi URL đăng ký có token phiên đến API mã hóa chính thức của Happ. Nếu mã hóa lỗi, web báo thử lại. Hồ sơ đã nhập bằng link thường cần thêm lại bằng link mới để ẩn URL đăng ký trong Happ.
+
 ## Kiểm tra
 
 Chạy `npm ci`, `npm test` và `npm run build`. Đặt `MIZZE_TEST_PYTHON` và `MIZZE_TEST_BACKUP_ROOT` để chạy kiểm thử tích hợp key, cấp hồ sơ và AimLag bằng gateway mô phỏng.

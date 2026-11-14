@@ -16,18 +16,68 @@ function selectTab(tab){currentTab=tab;$('page-title').textContent={connect:'K�
 function renderExpiry(){const end=connection?.expiresAt||license?.expiresAt;if(end&&end<=Date.now()){endSession('Key đã hết hạn.');return;}if(end){let left=Math.max(0,end-Date.now()),hours=Math.floor(left/3600000),mins=Math.floor(left/60000)%60;$('expiry').textContent=hours>=24?Math.floor(hours/24)+' ngày '+hours%24+' giờ':hours+' giờ '+mins+' phút';$('expiry-detail').textContent='Đến '+new Date(end).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'});$('key-status').textContent=left>0?'Key còn hạn':'Key đã hết hạn';}else{$('key-status').textContent='Key hợp lệ';$('expiry').textContent='Chưa bắt đầu';$('expiry-detail').textContent='Từ khi thêm vào Happ';}}
 function resetConnectionUi(){aimlag=null;renderAimLag();$('shortcuts').hidden=true;$('shortcut-pending').hidden=false;$('fallback').hidden=true;$('copy').hidden=true;$('binding').textContent='Chưa liên kết';$('add').innerHTML='Thêm vào Happ <span aria-hidden="true">↗</span>';$('signal').textContent='Chưa có trạng thái';$('signal-time').textContent='';$('signal-dot').classList.remove('live');$('aimlag-message').textContent='';}
 function showDashboard(){ $('login-screen').hidden=true;$('dashboard').hidden=false;$('key-label').textContent=keyLabel;$('add').disabled=false;renderExpiry();clearInterval(expiryTimer);expiryTimer=setInterval(renderExpiry,30000);selectTab('connect');}
-function buildShortcuts(value){if(!/^[a-f0-9]{64}$/.test(value.token||''))throw Error('Cấu hình không hợp lệ.');const u=new URL(value.subscription);if(u.protocol!=='https:'&&!(u.protocol==='http:'&&['localhost','127.0.0.1'].includes(u.hostname)))throw Error('Cấu hình không hợp lệ.');if(u.pathname!=='/sub/'+value.token)throw Error('Cấu hình không hợp lệ.');value.addUrl='happ://add/'+u.href;}
+const crypt5Pattern = /^happ:\/\/crypt5\/[A-Za-z0-9+/_=%-]{32,8192}$/;
+let cachedHappLink;
+
+async function getHappLink(current) {
+  if (cachedHappLink?.token === current.token) return cachedHappLink.url;
+  const { addUrl } = await api('/api/happ-link', null, current.token);
+  if (connection !== current || !crypt5Pattern.test(addUrl || '')) {
+    throw Error('Link mã hóa Happ không hợp lệ.');
+  }
+  cachedHappLink = { token: current.token, url: addUrl };
+  return addUrl;
+}
 function endSession(reason){clearInterval(signalTimer);clearInterval(expiryTimer);connection=null;grant=null;license=null;keyLabel='';sessionStorage.removeItem('mizze-connect-ui');resetConnectionUi();$('dashboard').hidden=true;$('login-screen').hidden=false;$('key').value='';message(reason,'error');}
 
-function renderConnection(){buildShortcuts(connection);$('fallback').href=connection.addUrl;$('fallback').hidden=true;$('copy').hidden=false;$('shortcuts').hidden=false;$('shortcut-pending').hidden=true;$('binding').textContent='Đã liên kết';$('add').innerHTML='Mở Happ <span aria-hidden="true">↗</span>';sessionStorage.setItem('mizze-connect-ui',JSON.stringify({connection,keyLabel}));renderExpiry();follow();}
+function renderConnection(){
+  if (!/^[a-f0-9]{64}$/.test(connection.token || '')) throw Error('Cấu hình không hợp lệ.');
+  connection = { token: connection.token, expiresAt: connection.expiresAt };
+  $('fallback').removeAttribute('href');$('fallback').hidden=true;$('copy').hidden=false;$('shortcuts').hidden=false;$('shortcut-pending').hidden=true;$('binding').textContent='Đã liên kết';$('add').innerHTML='Mở Happ <span aria-hidden="true">↗</span>';sessionStorage.setItem('mizze-connect-ui',JSON.stringify({connection,keyLabel}));renderExpiry();follow();
+}
 function signal(v){aimlag=v.aimlag?.supported===true?v.aimlag:null;renderAimLag();$('signal').textContent='Đang cập nhật';$('signal-dot').classList.add('live');$('signal-time').textContent='Cập nhật '+new Date(v.receivedAt).toLocaleTimeString('vi-VN');}
 function follow(){clearInterval(signalTimer);let working=false;const poll=async()=>{if(working||!connection)return;working=true;try{const current=connection;const v=await api('/api/state',null,current.token);if(connection===current)signal(v);}catch(error){if(error.status===401){endSession('Phiên hết hạn. Nhập lại key.');return;}$('signal').textContent='Đang kết nối lại…';$('signal-dot').classList.remove('live');}finally{working=false}};poll();signalTimer=setInterval(()=>{if(!document.hidden)poll()},10000);}
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,2500);}
 async function copy(value,input){try{await navigator.clipboard.writeText(value);return true;}catch{if(input){input.closest('details')?.setAttribute('open','');input.focus();input.select();try{return document.execCommand('copy')}catch{}}return false;}}
 $('reveal').onclick=()=>{let hidden=$('key').type==='password';$('key').type=hidden?'text':'password';$('reveal').textContent=hidden?'Ẩn':'Hiện';$('reveal').setAttribute('aria-label',hidden?'Ẩn key':'Hiện key');};
 $('key-form').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;$('check').disabled=true;message('Đang kiểm tra key…');try{const key=$('key').value.trim(),v=await api('/api/login',{key,deviceId:device});keyLabel='Key '+key.slice(0,4)+'••••'+key.slice(-4);license=v;grant=v.grant;connection=null;resetConnectionUi();$('key').value='';showDashboard();message(license.expiresAt?'Chọn Thêm vào Happ để kết nối.':'Thêm vào Happ sẽ bắt đầu thời hạn key.','good');}catch(e){message(e.name==='AbortError'?'Máy chủ phản hồi quá lâu. Bạn thử lại nhé.':e.message,'error');}finally{busy=false;$('check').disabled=false;}};
-$('add').onclick=async()=>{if(busy)return;if(connection){location.href=connection.addUrl;return;}busy=true;$('add').disabled=true;message('Đang tạo cấu hình…');try{connection=await api('/api/provision',{grant});renderConnection();message('Mở Happ và bật VPN.','good');location.href=connection.addUrl;}catch(e){message(e.message,'error');}finally{busy=false;$('add').disabled=false;}};
-$('copy').onclick=async()=>{if(await copy(connection.subscription))toast('Đã sao chép liên kết cấu hình');else message('Liên kết cấu hình: '+connection.subscription);};
+async function useHappLink(shouldCopy) {
+  if (busy || (!connection && (shouldCopy || !grant))) return;
+  busy = true;
+  $('add').disabled = true;
+  $('copy').disabled = true;
+  message('Đang tạo link mã hóa Happ…');
+  try {
+    if (!connection) {
+      connection = await api('/api/provision', { grant });
+      renderConnection();
+    }
+    if (!connection) return;
+    const url = await getHappLink(connection);
+    $('fallback').href = url;
+    $('fallback').hidden = false;
+    if (shouldCopy) {
+      if (await copy(url)) {
+        message('');
+        toast('Đã sao chép liên kết cấu hình');
+      } else {
+        message('Liên kết mã hóa: ' + url);
+      }
+    } else {
+      message('Mở Happ và bật VPN.', 'good');
+      location.href = url;
+    }
+  } catch (error) {
+    if (error.status === 401) endSession('Phiên hết hạn. Nhập lại key.');
+    else message(error.message, 'error');
+  } finally {
+    busy = false;
+    $('add').disabled = false;
+    $('copy').disabled = false;
+  }
+}
+$('add').onclick = () => useHappLink(false);
+$('copy').onclick = () => useHappLink(true);
 for(let button of document.querySelectorAll('[data-tab]'))button.onclick=()=>selectTab(button.dataset.tab);for(let button of document.querySelectorAll('[data-go]'))button.onclick=()=>selectTab(button.dataset.go);
 $('logout').onclick=()=>{api('/api/forget',{}).catch(()=>{});clearInterval(signalTimer);clearInterval(expiryTimer);sessionStorage.removeItem('mizze-connect-ui');grant=null;connection=null;keyLabel='';license=null;resetConnectionUi();$('dashboard').hidden=true;$('login-screen').hidden=false;$('message').textContent='Nhập key để bắt đầu.';$('key').focus();};
 api('/api/info').then(v=>{$('gateway').textContent=v.gateway==='ready'?'Máy chủ sẵn sàng':'Máy chủ chưa chạy';}).catch(()=>{$('gateway').textContent='Chưa nối được máy chủ';});

@@ -9,7 +9,7 @@
   },
   "rewrites": [
     { "source": "/connect.html", "destination": "/index.html" },
-    { "source": "/api/:name(info|login|provision|state|aimlag|resume|forget)", "destination": "/api/gateway?route=/api/:name" },
+    { "source": "/api/:name(info|login|provision|state|aimlag|resume|forget|happ-link)", "destination": "/api/gateway?route=/api/:name" },
     { "source": "/healthz", "destination": "/api/gateway?route=/api/info" },
     { "source": "/sub/:token", "destination": "/api/gateway?route=/sub/:token" }
   ],
