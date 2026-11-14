@@ -1,9 +1,11 @@
 private/
 native/
 node_modules/
+dist/
 backups/
 logs/
 .vercel/
+config.json
 PUBLIC-URL.txt
 *.zip
 *.log

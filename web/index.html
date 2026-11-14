@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#0c0d10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f6f3" media="(prefers-color-scheme: light)">
+  <title>Mizze Connect</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand"><span class="mark" aria-hidden="true">M</span><span>Mizze</span></div>
+      <span class="pill" id="pill" data-state="wait"><i aria-hidden="true"></i><span id="pill-text">Đang kết nối</span></span>
+    </header>
+
+    <section class="hero">
+      <h1>Kết nối gọn,<br><span>chỉ một chạm.</span></h1>
+      <p>Thêm cấu hình vào Happ rồi bật kết nối. Không cần đăng nhập.</p>
+    </section>
+
+    <section class="card connect">
+      <div class="status">
+        <div class="ring" id="ring" data-state="wait" aria-hidden="true"><span></span></div>
+        <div>
+          <p class="label">Trạng thái máy chủ</p>
+          <p class="value" id="status-text">Đang kiểm tra…</p>
+        </div>
+      </div>
+      <button id="add" class="btn primary" type="button" disabled>
+        <span>Thêm vào Happ</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+      </button>
+      <button id="copy" class="btn ghost" type="button" disabled>Sao chép liên kết cấu hình</button>
+      <p id="message" class="note" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="stats" aria-label="Thống kê">
+      <div class="tile"><p class="label">Tải lên</p><p class="num" id="up">0 B</p></div>
+      <div class="tile"><p class="label">Tải xuống</p><p class="num" id="down">0 B</p></div>
+      <div class="tile"><p class="label">Kết nối</p><p class="num" id="conn">0</p></div>
+    </section>
+
+    <section class="card steps">
+      <h2>Cách dùng</h2>
+      <ol>
+        <li><b>Cài Happ</b><span>Tải Happ từ App Store hoặc trang chính thức.</span></li>
+        <li><b>Thêm cấu hình</b><span>Bấm “Thêm vào Happ” và xác nhận nhập cấu hình.</span></li>
+        <li><b>Bật kết nối</b><span>Chọn hồ sơ Mizze trong Happ rồi bật.</span></li>
+      </ol>
+    </section>
+
+    <footer class="foot">
+      <a href="https://www.happ.su/main" target="_blank" rel="noreferrer">Cài Happ ↗</a>
+      <span id="uptime">—</span>
+    </footer>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
