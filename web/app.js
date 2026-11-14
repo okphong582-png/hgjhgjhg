@@ -1,58 +1,40 @@
-'use strict';
-const $ = id => document.getElementById(id);
-let config = null, busy = false, toastTimer = 0;
+// Local UI language only; key values and shortcut URLs are never translated.
+let portalLanguage=localStorage.getItem('mizze-language')==='en'?'en':'vi';
+const english={"Chức năng": "Features", "AimLag khi bắn": "AimLag while firing", "01 / CHỨC NĂNG": "01 / FEATURES", "Thử nghiệm": "Experimental", "Tắt để truyền bình thường. Bật để dùng khi bắn.": "Off for normal traffic. Enable to use while firing.", "Nhận biết bắn qua lưu lượng mạng, có thể nhận nhầm.": "Firing is inferred from traffic and may be misidentified.", "Đã bật · Chờ bắn": "On · Waiting for firing", "Đang giữ gói": "Holding packets", "Đã tắt": "Off", "Đang cập nhật": "Updating", "Đang kiểm tra": "Checking", "Mở Chức năng": "Open Features", "Bật hoặc tắt AimLag khi bắn.": "Enable or disable AimLag while firing.", "Vào game": "Open the game", "Tắt AimLag để ngừng độ trễ do tính năng.": "Turn AimLag off to stop delay from this feature.", "Máy chủ cần cập nhật AimLag.": "The server needs the AimLag update.", "Không cập nhật được. Thử lại.": "Could not update. Try again.", "Kết nối": "Connect", "Hướng dẫn": "Guide", "Kết nối Happ trước": "Connect Happ first", "Đến Kết nối": "Go to Connect", "Kết nối Happ": "Connect Happ", "Thêm cấu hình và bật VPN.": "Import the configuration and enable VPN.", "Chạm kết nối.": "A touch of connection.", "Mở không gian.": "A space of your own.", "Kết nối của bạn. Theo cách của bạn.": "Your connection. Your way.", "Truy cập riêng.": "Your private access.", "Nhập key để bắt đầu.": "Enter your key to start.", "Key truy cập": "Access key", "Vào không gian": "Enter your space", "Tự ghi nhớ trên trình duyệt này.": "Sign-in is remembered on this browser.", "Về thời hạn key": "Key duration", "Thời hạn chỉ bắt đầu khi chọn “Thêm vào Happ”.": "Your key duration starts when you select Add to Happ.", "Thêm vào Happ": "Add to Happ", "Mở Happ": "Open Happ", "Mở lại Happ": "Open Happ again", "Sao chép cấu hình": "Copy configuration", "Thêm cấu hình, rồi bật VPN trong Happ.": "Import the configuration, then enable VPN in Happ.", "Không gian kết nối.": "Your connection space.", "Nhịp kết nối": "Connection pulse", "KHÔNG GIAN CỦA BẠN": "YOUR PERSONAL SPACE", "TỔNG QUAN": "OVERVIEW", "01 / KẾT NỐI": "01 / CONNECTION", "Thời hạn": "Time left", "Thiết bị": "Device", "Chưa liên kết": "Not linked", "Đã liên kết": "Linked", "Key hợp lệ": "Valid key", "Key còn hạn": "Key active", "Chưa bắt đầu": "Not started", "Từ khi thêm vào Happ": "From import into Happ", "Ngôn ngữ": "Language", "Hiện key": "Show key", "Ẩn key": "Hide key", "Hiện": "Show", "Ẩn": "Hide", "Nhập key Mizze": "Enter your Mizze key", "Đổi key": "Change key", "Đang kiểm tra máy chủ": "Checking the server", "Máy chủ sẵn sàng": "Server ready", "Máy chủ chưa chạy": "Server offline", "Chưa nối được máy chủ": "Unable to reach the server", "Chưa có trạng thái": "No status yet", "Chi tiết": "Details", "Đây là trạng thái tính năng. Kiểm tra VPN trong Happ.": "These are feature states. Check VPN in Happ.", "Cài Happ ↗": "Get Happ ↗", "Đang lưu…": "Saving…", "Đang kết nối lại…": "Reconnecting…", "Đã khôi phục kết nối.": "Connection restored.", "Đang kiểm tra key…": "Checking your key…", "Đang tạo cấu hình…": "Creating configuration…", "Mở Happ và bật VPN.": "Open Happ and enable VPN.", "Đã sao chép liên kết cấu hình": "Configuration link copied", "Chọn Thêm vào Happ để kết nối.": "Select Add to Happ to connect.", "Thêm vào Happ sẽ bắt đầu thời hạn key.": "Adding to Happ starts your key duration.", "Đã lưu": "Saved", "Tắt": "Off"};
+delete english[''];
+const textSources=new WeakMap(),attributeSources=new WeakMap();
+function translateText(text){if(portalLanguage==='vi')return text;const m=text.match(/^(\s*)([\s\S]*?)(\s*)$/),base=m[2];let value=english[base];if(value===undefined){value=base.replace(/^Đã lưu: ([\d.]+) giây$/,'Saved: $1 seconds').replace(/^Tự tắt sau ([\d.]+) giây$/,'Turns off in $1 seconds').replace(/^Cập nhật /,'Updated ').replace(/^Đến /,'Until ').replace(/^(\d+) ngày (\d+) giờ$/,(all,d,h)=>d+' '+(+d===1?'day':'days')+' '+h+' '+(+h===1?'hour':'hours')).replace(/^(\d+) giờ (\d+) phút$/,(all,h,m)=>h+' '+(+h===1?'hour':'hours')+' '+m+' '+(+m===1?'minute':'minutes')).replace(/^(FakeLag|Ghost|Telekill) · Tắt$/,'$1 · Off').replace(/^(FakeLag|Ghost|Telekill) · Bật$/,'$1 · On').replace(/^Cập nhật (.+)\. Đây là trạng thái nút, không phải xác nhận VPN\.$/,'Updated $1. This is the control state, not VPN confirmation.').replace(/^Liên kết cấu hình: /,'Configuration link: ');}return m[1]+value+m[3];}
+function translatePortal(){document.documentElement.lang=portalLanguage;document.title=portalLanguage==='vi'?'Mizze · Kết nối':'Mizze · Connection';const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(['SCRIPT','STYLE','CODE','OPTION'].includes(node.parentElement?.tagName))continue;let entry=textSources.get(node);if(!entry||node.nodeValue!==entry.last)entry={base:node.nodeValue,last:node.nodeValue};let translated=translateText(entry.base);if(node.nodeValue!==translated)node.nodeValue=translated;entry.last=translated;textSources.set(node,entry);}for(const el of document.querySelectorAll('[aria-label],[placeholder],[alt]')){let entries=attributeSources.get(el)||{};for(const key of ['aria-label','placeholder','alt'])if(el.hasAttribute(key)){let current=el.getAttribute(key),entry=entries[key];if(!entry||entry.last!==current)entry={base:current,last:current};let translated=translateText(entry.base);if(current!==translated)el.setAttribute(key,translated);entry.last=translated;entries[key]=entry;}attributeSources.set(el,entries);}for(const el of document.querySelectorAll('[data-language]'))el.value=portalLanguage;}
+for(const el of document.querySelectorAll('[data-language]'))el.addEventListener('change',()=>{portalLanguage=el.value==='en'?'en':'vi';localStorage.setItem('mizze-language',portalLanguage);translatePortal();});
+let languageTick=false;new MutationObserver(()=>{if(languageTick)return;languageTick=true;queueMicrotask(()=>{languageTick=false;translatePortal();});}).observe(document.body,{subtree:true,childList:true,characterData:true});translatePortal();
 
-const bytes = n => n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B';
-const uptime = s => { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return 'Hoạt động ' + (d ? d + ' ngày ' : '') + (d || h ? h + ' giờ ' : '') + m + ' phút'; };
+const $=id=>document.getElementById(id);let aimlag=null,aimlagBusy=false;let grant=null,connection=null,busy=false,keyLabel='',license=null,signalTimer=null,expiryTimer=null,currentTab='connect';
+let device=localStorage.getItem('mizze-device');if(!/^[a-f0-9]{32}$/.test(device||'')){device=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('mizze-device',device);}
+function message(s,type=''){s=String(s).replace(/Add Happ/g,'Thêm vào Happ').replace(/Gateway/g,'Máy chủ').replace(/gateway/g,'máy chủ');if(/Failed to fetch|NetworkError|aborted/i.test(s))s='Không kết nối được máy chủ.';const el=$('dashboard').hidden?$('message'):$('connection-message');el.textContent=s;el.className='portal-message '+type;}
+async function api(url,data,token){let c=new AbortController(),timer=setTimeout(()=>c.abort(),20000);try{let r=await fetch(url,{method:data?'POST':'GET',headers:{...(data?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:c.signal});let b;try{b=await r.json();}catch{const e=Error(r.status===429?'Máy chủ đang giới hạn yêu cầu. Đợi một lúc rồi thử lại.':'Chưa kết nối được gateway VPS. Vui lòng thử lại sau.');e.status=r.status;throw e;}if(!r.ok){const e=Error(b.error||'Không kết nối được máy chủ.');e.status=r.status;throw e;}return b;}finally{clearTimeout(timer)}}
+function selectTab(tab){currentTab=tab;$('page-title').textContent={connect:'Kết nối',shortcuts:'Chức năng',guide:'Hướng dẫn'}[tab];$('key-label').hidden=tab!=='connect';for(let t of ['connect','shortcuts','guide'])$('panel-'+t).hidden=t!==tab;for(let b of document.querySelectorAll('[data-tab]')){if(b.dataset.tab===tab)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}window.scrollTo({top:0,behavior:'instant'});}
+function renderExpiry(){const end=connection?.expiresAt||license?.expiresAt;if(end&&end<=Date.now()){endSession('Key đã hết hạn.');return;}if(end){let left=Math.max(0,end-Date.now()),hours=Math.floor(left/3600000),mins=Math.floor(left/60000)%60;$('expiry').textContent=hours>=24?Math.floor(hours/24)+' ngày '+hours%24+' giờ':hours+' giờ '+mins+' phút';$('expiry-detail').textContent='Đến '+new Date(end).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'});$('key-status').textContent=left>0?'Key còn hạn':'Key đã hết hạn';}else{$('key-status').textContent='Key hợp lệ';$('expiry').textContent='Chưa bắt đầu';$('expiry-detail').textContent='Từ khi thêm vào Happ';}}
+function resetConnectionUi(){aimlag=null;renderAimLag();$('shortcuts').hidden=true;$('shortcut-pending').hidden=false;$('fallback').hidden=true;$('copy').hidden=true;$('binding').textContent='Chưa liên kết';$('add').innerHTML='Thêm vào Happ <span aria-hidden="true">↗</span>';$('signal').textContent='Chưa có trạng thái';$('signal-time').textContent='';$('signal-dot').classList.remove('live');$('aimlag-message').textContent='';}
+function showDashboard(){ $('login-screen').hidden=true;$('dashboard').hidden=false;$('key-label').textContent=keyLabel;$('add').disabled=false;renderExpiry();clearInterval(expiryTimer);expiryTimer=setInterval(renderExpiry,30000);selectTab('connect');}
+function buildShortcuts(value){if(!/^[a-f0-9]{64}$/.test(value.token||''))throw Error('Cấu hình không hợp lệ.');const u=new URL(value.subscription);if(u.protocol!=='https:'&&!(u.protocol==='http:'&&['localhost','127.0.0.1'].includes(u.hostname)))throw Error('Cấu hình không hợp lệ.');if(u.pathname!=='/sub/'+value.token)throw Error('Cấu hình không hợp lệ.');value.addUrl='happ://add/'+u.href;}
+function endSession(reason){clearInterval(signalTimer);clearInterval(expiryTimer);connection=null;grant=null;license=null;keyLabel='';sessionStorage.removeItem('mizze-connect-ui');resetConnectionUi();$('dashboard').hidden=true;$('login-screen').hidden=false;$('key').value='';message(reason,'error');}
 
-async function api(url) {
-  const r = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
-  let v; try { v = await r.json(); } catch { throw Error('Máy chủ chưa phản hồi. Thử tải lại trang.'); }
-  if (!r.ok) throw Error(v.error || 'Không kết nối được máy chủ.');
-  return v;
-}
+function renderConnection(){buildShortcuts(connection);$('fallback').href=connection.addUrl;$('fallback').hidden=true;$('copy').hidden=false;$('shortcuts').hidden=false;$('shortcut-pending').hidden=true;$('binding').textContent='Đã liên kết';$('add').innerHTML='Mở Happ <span aria-hidden="true">↗</span>';sessionStorage.setItem('mizze-connect-ui',JSON.stringify({connection,keyLabel}));renderExpiry();follow();}
+function signal(v){aimlag=v.aimlag?.supported===true?v.aimlag:null;renderAimLag();$('signal').textContent='Đang cập nhật';$('signal-dot').classList.add('live');$('signal-time').textContent='Cập nhật '+new Date(v.receivedAt).toLocaleTimeString('vi-VN');}
+function follow(){clearInterval(signalTimer);let working=false;const poll=async()=>{if(working||!connection)return;working=true;try{const current=connection;const v=await api('/api/state',null,current.token);if(connection===current)signal(v);}catch(error){if(error.status===401){endSession('Phiên hết hạn. Nhập lại key.');return;}$('signal').textContent='Đang kết nối lại…';$('signal-dot').classList.remove('live');}finally{working=false}};poll();signalTimer=setInterval(()=>{if(!document.hidden)poll()},10000);}
+function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,2500);}
+async function copy(value,input){try{await navigator.clipboard.writeText(value);return true;}catch{if(input){input.closest('details')?.setAttribute('open','');input.focus();input.select();try{return document.execCommand('copy')}catch{}}return false;}}
+$('reveal').onclick=()=>{let hidden=$('key').type==='password';$('key').type=hidden?'text':'password';$('reveal').textContent=hidden?'Ẩn':'Hiện';$('reveal').setAttribute('aria-label',hidden?'Ẩn key':'Hiện key');};
+$('key-form').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;$('check').disabled=true;message('Đang kiểm tra key…');try{const key=$('key').value.trim(),v=await api('/api/login',{key,deviceId:device});keyLabel='Key '+key.slice(0,4)+'••••'+key.slice(-4);license=v;grant=v.grant;connection=null;resetConnectionUi();$('key').value='';showDashboard();message(license.expiresAt?'Chọn Thêm vào Happ để kết nối.':'Thêm vào Happ sẽ bắt đầu thời hạn key.','good');}catch(e){message(e.name==='AbortError'?'Máy chủ phản hồi quá lâu. Bạn thử lại nhé.':e.message,'error');}finally{busy=false;$('check').disabled=false;}};
+$('add').onclick=async()=>{if(busy)return;if(connection){location.href=connection.addUrl;return;}busy=true;$('add').disabled=true;message('Đang tạo cấu hình…');try{connection=await api('/api/provision',{grant});renderConnection();message('Mở Happ và bật VPN.','good');location.href=connection.addUrl;}catch(e){message(e.message,'error');}finally{busy=false;$('add').disabled=false;}};
+$('copy').onclick=async()=>{if(await copy(connection.subscription))toast('Đã sao chép liên kết cấu hình');else message('Liên kết cấu hình: '+connection.subscription);};
+for(let button of document.querySelectorAll('[data-tab]'))button.onclick=()=>selectTab(button.dataset.tab);for(let button of document.querySelectorAll('[data-go]'))button.onclick=()=>selectTab(button.dataset.go);
+$('logout').onclick=()=>{api('/api/forget',{}).catch(()=>{});clearInterval(signalTimer);clearInterval(expiryTimer);sessionStorage.removeItem('mizze-connect-ui');grant=null;connection=null;keyLabel='';license=null;resetConnectionUi();$('dashboard').hidden=true;$('login-screen').hidden=false;$('message').textContent='Nhập key để bắt đầu.';$('key').focus();};
+api('/api/info').then(v=>{$('gateway').textContent=v.gateway==='ready'?'Máy chủ sẵn sàng':'Máy chủ chưa chạy';}).catch(()=>{$('gateway').textContent='Chưa nối được máy chủ';});
+(async()=>{let saved;try{saved=JSON.parse(sessionStorage.getItem('mizze-connect-ui')||'null')}catch{sessionStorage.removeItem('mizze-connect-ui')}
+ try{const resumed=await api('/api/resume',{deviceId:device});license=resumed;grant=resumed.grant;keyLabel=resumed.keyLabel?'Key '+resumed.keyLabel:'Key đã lưu';resetConnectionUi();showDashboard();if(resumed.connection){connection=resumed.connection;renderConnection();}message('Đã khôi phục kết nối.','good');return;}catch(error){if(error.status===401)sessionStorage.removeItem('mizze-connect-ui');}
+ try{if(!saved?.connection?.token||saved.connection.expiresAt<=Date.now())return;await api('/api/state',null,saved.connection.token);connection=saved.connection;keyLabel=saved.keyLabel||'Key đã lưu';showDashboard();renderConnection();message('Đã khôi phục kết nối.','good');}catch{sessionStorage.removeItem('mizze-connect-ui');}
+})();
 
-function setState(kind, pill, text) {
-  $('pill').dataset.state = kind; $('ring').dataset.state = kind;
-  $('pill-text').textContent = pill; $('status-text').textContent = text;
-}
-
-function toast(text) {
-  const t = $('toast'); t.textContent = text; t.classList.add('show');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
-}
-
-async function refresh() {
-  if (busy) return; busy = true;
-  try {
-    const s = await api('/api/state');
-    $('up').textContent = bytes(s.stats.up || 0);
-    $('down').textContent = bytes(s.stats.down || 0);
-    $('conn').textContent = s.activeConnections;
-    $('uptime').textContent = uptime(s.uptimeSeconds || 0);
-    if (s.online) {
-      setState('ok', 'Trực tuyến', 'Sẵn sàng kết nối');
-      if (!config) {
-        config = await api('/api/config');
-        $('add').disabled = false; $('copy').disabled = false; $('message').textContent = '';
-      }
-    } else {
-      setState('wait', 'Đang khởi động', 'Máy chủ đang khởi động…');
-    }
-  } catch (e) {
-    setState('bad', 'Ngoại tuyến', 'Chưa kết nối được');
-    $('message').textContent = e.message;
-    $('add').disabled = true; $('copy').disabled = true; config = null;
-  } finally { busy = false; }
-}
-
-$('add').onclick = () => { if (config) location.href = config.addUrl; };
-$('copy').onclick = async () => {
-  if (!config) return;
-  try { await navigator.clipboard.writeText(config.subscription); toast('Đã sao chép liên kết'); }
-  catch { $('message').textContent = config.subscription; }
-};
-
-refresh();
-setInterval(() => { if (!document.hidden) refresh(); }, 10000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+function renderAimLag(){const supported=!!aimlag;const on=aimlag?.enabled===true;const button=$('aimlag-toggle');button.disabled=!supported||aimlagBusy;button.setAttribute('aria-checked',String(on));const text=!supported?'Máy chủ cần cập nhật AimLag.':on?(aimlag.holding?'Đang giữ gói':'Đã bật · Chờ bắn'):'Đã tắt';$('aimlag-state').textContent=text;$('mode-aimlag').textContent='AimLag · '+(!supported?'Đang kiểm tra':on?'Bật':'Tắt');$('mode-aimlag').classList.toggle('on',on);}
+$('aimlag-toggle').onclick=async()=>{if(!connection||!aimlag||aimlagBusy)return;const current=connection;aimlagBusy=true;renderAimLag();$('aimlag-message').textContent='Đang lưu…';try{const v=await api('/api/aimlag',{enabled:!aimlag.enabled},current.token);if(connection!==current)return;if(v.aimlag?.supported!==true)throw Error('Máy chủ cần cập nhật AimLag.');signal(v);$('aimlag-message').textContent='Đã lưu';}catch(error){if(connection===current){$('aimlag-message').textContent=error.message||'Không cập nhật được. Thử lại.';if(error.status===401)endSession('Phiên hết hạn. Nhập lại key.');}}finally{aimlagBusy=false;renderAimLag();}};

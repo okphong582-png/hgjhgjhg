@@ -5,11 +5,12 @@
   "buildCommand": "node build.cjs",
   "outputDirectory": "dist",
   "functions": {
-    "api/gateway.js": { "maxDuration": 20 }
+    "api/gateway.js": { "maxDuration": 20, "excludeFiles": "{web,dist}/**" }
   },
   "rewrites": [
-    { "source": "/api/:name(state|config)", "destination": "/api/gateway?route=/api/:name" },
-    { "source": "/healthz", "destination": "/api/gateway?route=/healthz" },
+    { "source": "/connect.html", "destination": "/index.html" },
+    { "source": "/api/:name(info|login|provision|state|aimlag|resume|forget)", "destination": "/api/gateway?route=/api/:name" },
+    { "source": "/healthz", "destination": "/api/gateway?route=/api/info" },
     { "source": "/sub/:token", "destination": "/api/gateway?route=/sub/:token" }
   ],
   "headers": [

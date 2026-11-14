@@ -1,0 +1,2 @@
+const fs=require('fs'),path=require('path');const p=__dirname,c=JSON.parse(fs.readFileSync(path.join(p,'private/local-settings.json'))),a=JSON.parse(fs.readFileSync(path.join(p,'private/auth.json'))).adminToken;
+fetch('http://localhost:'+c.webPort+'/api/shutdown',{method:'POST',headers:{Authorization:'Bearer '+a,'Content-Type':'application/json'},body:'{}'}).then(r=>console.log(r.ok?'Mizze Connect stopping.':'Unable to stop gateway.')).catch(()=>console.log('Gateway is already stopped.'));

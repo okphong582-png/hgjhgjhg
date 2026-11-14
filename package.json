@@ -1,12 +1,13 @@
 {
-  "name": "mizze-connect-sach",
-  "version": "1.0.0",
+  "name": "mizze-connect",
+  "version": "1.1.0",
   "private": true,
-  "description": "Web kết nối Happ gọn đẹp + máy chủ VPS (Xray WebSocket qua relay SOCKS5).",
   "scripts": {
     "build": "node build.cjs",
-    "start": "node server.cjs",
-    "test": "node --test tests/relay.test.cjs tests/vercel.test.cjs"
+    "test": "node --test tests/auto-off.test.cjs tests/web-proxy.test.cjs tests/packet-gate.test.cjs tests/security.test.cjs tests/security-flow.test.cjs tests/aimlag.test.cjs tests/aimlag-api.test.cjs",
+    "start:vps": "node run-vps.cjs"
   },
-  "engines": { "node": ">=20" }
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
 }
