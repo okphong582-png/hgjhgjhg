@@ -36,6 +36,8 @@ module.exports=async function handler(req,res){
   const at=String(Date.now()),headers={'Content-Type':'application/json','Origin':base.origin,'x-mizze-at':at,'x-mizze-ip':ip,'x-mizze-signature':signature(secret,req.method,route,at,ip,body)};
   const remember=String(req.headers.cookie||'').match(/(?:^|;\s*)mizze_remember=([A-Za-z0-9_.-]{1,2048})(?:;|$)/);if(remember)headers.Cookie='mizze_remember='+remember[1];
   if(req.headers.authorization)headers.Authorization=req.headers.authorization;for(const h of ['purpose','sec-purpose'])if(req.headers[h])headers[h]=req.headers[h];
+  const hwid=req.headers['x-hwid'];
+  if(targetPath.startsWith('/sub/')&&typeof hwid==='string'&&/^[A-Za-z0-9_=+\/-]{8,128}$/.test(hwid))headers['x-hwid']=hwid;
   if(inflight>=upstreamSlotLimit){res.setHeader('Retry-After','5');return fail(503,'Máy chủ bận. Vui lòng thử lại sau.');}
   inflight++;
   try {
@@ -64,7 +66,7 @@ module.exports=async function handler(req,res){
    }
   }
   const cookie=response.headers.get('set-cookie');if(cookie&&cookie.startsWith('mizze_remember='))res.setHeader('Set-Cookie',cookie);
-  res.statusCode=response.status;res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');for(const name of ['content-type','profile-title','subscription-userinfo','profile-update-interval','retry-after']){const value=response.headers.get(name);if(value)res.setHeader(name,value);}if(targetPath.startsWith('/sub/')&&response.ok)res.setHeader('Hide-Settings','1');
+  res.statusCode=response.status;res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');for(const name of ['content-type','profile-title','subscription-userinfo','profile-update-interval','subscription-always-hwid-enable','retry-after']){const value=response.headers.get(name);if(value)res.setHeader(name,value);}if(targetPath.startsWith('/sub/')&&response.ok)res.setHeader('Hide-Settings','1');
   if(response.ok&&(targetPath==='/api/provision'||targetPath==='/api/resume')){
    const data=await response.json();
    const session=targetPath==='/api/provision'?data:data.connection;

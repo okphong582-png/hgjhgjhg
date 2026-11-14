@@ -33,14 +33,60 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
  const autoOff=new AutoOff({settings:storedSettings,states:keyControls,save:saveFeatureSettings,onChange:(scope,state)=>{for(const item of sessions.values())if(scopeOf(item)===scope&&gateway.users.has(item.email))gateway.setUserState(item.email,state);gateway.revision=(gateway.revision||0)+1;gateway.signalUpdatedAt=Date.now();emit();}});
  const findSource=s=>backend.sources.find(x=>x.name===s.project);
  const persist=()=>atomic(sessionName,[...sessions]);
+ function bindHappBrowser(record,request,now){
+  const owner=record?.happBrowser;
+  if(owner&&record.devices?.[owner]&&owner!==request.deviceHash)return;
+  const next=policy.bind(record,request,now);
+  if(next)return {...next,happBrowser:request.deviceHash};
+ }
+ function activeSession(token,s){
+  return sessions.get(token)===s&&s.expiresAt>Date.now();
+ }
+ async function bindHappDevice(token,s,req,record){
+  const hwid=req.headers['x-hwid'];
+  if(typeof hwid!=='string'||! /^[A-Za-z0-9_=+\/-]{8,128}$/.test(hwid))return 'Happ không gửi mã thiết bị. Bật HWID trong Happ rồi cập nhật hồ sơ.';
+  const hash=crypto.createHmac('sha256',auth.adminToken).update('happ-hwid\n'+hwid).digest('hex');
+  if(s.happDeviceHash&&s.happDeviceHash!==hash)return 'Key Happ đã liên kết với thiết bị khác.';
+  // Existing keys may have been issued before the dedicated Happ browser limit.
+  if(record.happBrowser!==s.deviceHash){
+   const ref=findSource(s).db.ref('licensesV9/'+s.hash);
+   await backend.backup(s.project,s.hash,record);
+   const tx=await ref.transaction(current=>{
+    if(!policy.validRecord(current,Date.now())||current.devices?.[s.deviceHash]?.claimedAt!==s.claimedAt)return;
+    if(current.happBrowser&&current.devices[current.happBrowser]&&current.happBrowser!==s.deviceHash)return;
+    return {...current,happBrowser:s.deviceHash};
+   });
+   if(!tx.committed)return 'Key Happ đã liên kết với thiết bị khác.';
+  }
+  if(!activeSession(token,s))fail('unauthorized');
+  if(s.happDeviceHash&&s.happDeviceHash!==hash)return 'Key Happ đã liên kết với thiết bị khác.';
+  if(!s.happDeviceHash){
+   const next={...s,happDeviceHash:hash};
+   atomic(sessionName,[...sessions].map(([id,item])=>[id,id===token?next:item]));
+   s.happDeviceHash=hash;
+  }
+ }
  const view=email=>({gateway:gateway.ready?'ready':'offline',control:email?gateway.userState(email):gateway.control,revision:gateway.revision||0,signalUpdatedAt:gateway.signalUpdatedAt||null,receivedAt:Date.now(),timing:email?autoOff.describe(scopeOf([...sessions.values()].find(x=>x.email===email))):null,stats:gateway.stats(email),trafficVerified:false,aimlag:email?aimlagView(email):{supported:typeof gateway.setUserAimLag==='function'}});
  function emit(){for(const [res,s]of streams){if(!sessions.has(s.token)){res.end();streams.delete(res);continue;}if(res.writableLength>65536){res.destroy();streams.delete(res);}else res.write('data: '+JSON.stringify(view(sessions.get(s.token)?.email))+'\n\n');}}
  function rememberCookie(res,value,url){const secure=isPublicHost(url.hostname)||!!proxySecret||!['localhost','127.0.0.1'].includes(url.hostname);res.setHeader('Set-Cookie','mizze_remember='+value+'; Path=/api; Max-Age='+(value?Math.floor(REMEMBER_TTL/1000):0)+'; HttpOnly; SameSite=Strict'+(secure?'; Secure':''));}
  function remember(res,item,deviceHash,record,label,url){rememberCookie(res,sealRemember({project:item.source.name,hash:item.hash,deviceHash,claimedAt:record.devices?.[deviceHash]?.claimedAt||0,label},auth.adminToken),url);}
  function connectionView(token,s,url){const subscription=(publicOrigin||((url.hostname==='localhost'||url.hostname==='127.0.0.1')&&lanIps().length?'http://'+lanIps()[0]+':'+settingsUsed.webPort:url.origin))+'/sub/'+token;return {token,subscription,addUrl:'happ://add/'+subscription,expiresAt:s.expiresAt,shortcuts:Object.fromEntries(['fakelag','ghost','telekill'].map(mode=>[mode,(publicOrigin||url.origin)+'/key/'+token+'/'+mode]))};}
- async function authorize(s){if(!Number.isSafeInteger(s.expiresAt)||s.expiresAt<=Date.now())return false;let source=findSource(s);if(!source)return false;let r=(await source.db.ref('licensesV9/'+s.hash).get()).val();return policy.validRecord(r,Date.now())&&r.expiresAt>Date.now()&&r.devices?.[s.deviceHash]&&r.devices[s.deviceHash].claimedAt===s.claimedAt;}
+ async function authorize(s){if(!Number.isSafeInteger(s.expiresAt)||s.expiresAt<=Date.now())return false;let source=findSource(s);if(!source)return false;let r=(await source.db.ref('licensesV9/'+s.hash).get()).val();return policy.validRecord(r,Date.now())&&(!r.happBrowser||!r.devices?.[r.happBrowser]||r.happBrowser===s.deviceHash)&&r.devices?.[s.deviceHash]?.claimedAt===s.claimedAt?r:false;}
  function session(req){let token=(req.headers.authorization||'').replace(/^Bearer /,'');let s=sessions.get(token);if(!s||s.expiresAt<=Date.now()){if(s)deadlines.revoke(token).catch(()=>{});fail('unauthorized');}return {token,...s};}
- async function ensure(s){try{if(!await authorize(s))fail('unauthorized')}catch(e){for(const [token,item]of sessions)if(item.email===s.email)await deadlines.revoke(token).catch(()=>{});fail(e.message==='unauthorized'?'unauthorized':'unavailable')}await gateway.add(s.uuid,s.email);const scope=s.project+':'+s.hash;if(keyControls.has(scope))gateway.setUserState(s.email,keyControls.get(scope));if(gateway.setUserAimLag)gateway.setUserAimLag(s.email,aimlagSettings[scope]===true);}
+ async function ensure(s){
+  const token=s.token||[...sessions].find(([,item])=>item===s)?.[0];
+  const current=sessions.get(token);
+  if(!current||!activeSession(token,current))fail('unauthorized');
+  let record;
+  try{record=await authorize(s);if(!record)fail('unauthorized')}catch(e){await deadlines.revoke(token).catch(()=>{});fail(e.message==='unauthorized'?'unauthorized':'unavailable')}
+  if(!activeSession(token,current))fail('unauthorized');
+  await gateway.add(s.uuid,s.email);
+  if(!activeSession(token,current))fail('unauthorized');
+  const scope=scopeOf(s);
+  if(keyControls.has(scope))gateway.setUserState(s.email,keyControls.get(scope));
+  if(gateway.setUserAimLag)gateway.setUserAimLag(s.email,aimlagSettings[scope]===true);
+  return record;
+ }
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
@@ -76,7 +122,7 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
     const st=status(record),claimed=record?.devices?.[savedRemember.deviceHash]?.claimedAt||0;
     if(!['active','pending'].includes(st)||claimed!==savedRemember.claimedAt||(!claimed&&st!=='pending')){rememberCookie(res,'',url);fail('unauthorized');}
     const request={keyHash:savedRemember.hash,deviceHash:savedRemember.deviceHash,nonce:crypto.randomBytes(16).toString('hex'),claim:true};
-    if(!policy.bind(record,request,Date.now())){rememberCookie(res,'',url);fail('unauthorized');}if(!gateway.ready)fail('gateway_not_ready');
+    if(!bindHappBrowser(record,request,Date.now())){rememberCookie(res,'',url);fail('unauthorized');}if(!gateway.ready)fail('gateway_not_ready');
     const item={source,hash:savedRemember.hash,record},grant=crypto.randomBytes(24).toString('hex');if(grants.size>1000)grants.clear();grants.set(grant,{item,deviceHash:savedRemember.deviceHash,request,at:now,label:savedRemember.label});
     const existing=[...sessions].find(([token,s])=>s.project===source.name&&s.hash===item.hash&&s.deviceHash===savedRemember.deviceHash&&s.claimedAt===claimed&&s.expiresAt>now);
     if(existing)await ensure(existing[1]);
@@ -86,7 +132,7 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
     if(!authRate.take(ip)){res.setHeader('Retry-After','60');json(res,429,{error:'Thao tác quá nhanh. Thử lại sau.'});return;}
     let b=await body(req);if(Object.keys(b).some(k=>!['key','deviceId'].includes(k))||typeof b.key!=='string'||b.key.length>180||!/^[a-f0-9]{32}$/.test(b.deviceId||''))fail('invalid_key');let key=b.key.trim().toUpperCase();if(!/^[A-Z0-9_-]{6,180}$/.test(key))fail('invalid_key');
     let item;try{item=await backend.lookup({key})}catch{fail('unavailable')};if(!item)fail('invalid_key');let st=status(item.record);if(!['pending','active'].includes(st))fail(st==='missing'?'invalid_key':st);
-    let deviceHash=sha('mizze-happ-browser-v1\n'+b.deviceId),request={keyHash:item.hash,deviceHash,nonce:crypto.randomBytes(16).toString('hex'),claim:true};if(!policy.bind(item.record,request,Date.now()))fail('full');
+    let deviceHash=sha('mizze-happ-browser-v1\n'+b.deviceId),request={keyHash:item.hash,deviceHash,nonce:crypto.randomBytes(16).toString('hex'),claim:true};if(!bindHappBrowser(item.record,request,Date.now()))fail('full');
     if(!gateway.ready)fail('gateway_not_ready');if(grants.size>1000)grants.clear();let grant=crypto.randomBytes(24).toString('hex');grants.set(grant,{item,deviceHash,request,at:now,label:key.slice(0,4)+'••••'+key.slice(-4)});remember(res,item,deviceHash,item.record,key.slice(0,4)+'••••'+key.slice(-4),url);
     json(res,200,{grant,status:st,durationMs:item.record.durationMs||null,expiresAt:item.record.expiresAt||null,startsOnAdd:st==='pending',message:st==='pending'?'Key hợp lệ. Bấm Add Happ sẽ kích hoạt và liên kết trình duyệt này.':'Key còn hạn. Bấm Add Happ để lấy cấu hình.'});return;
    }
@@ -100,15 +146,26 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
     if(!provisionRate.take(ip)){res.setHeader('Retry-After','60');json(res,429,{error:'Thao tác quá nhanh. Thử lại sau.'});return;}
     let b=await body(req);if(typeof b.grant!=='string'||!/^[a-f0-9]{48}$/.test(b.grant)||Object.keys(b).some(k=>k!=='grant'))fail('unauthorized');let g=grants.get(b.grant);if(!g||now-g.at>300000)fail('unauthorized');if(!gateway.ready)fail('gateway_not_ready');
     const {item,request,deviceHash}=g;let ref=item.source.db.ref('licensesV9/'+item.hash);let record;
-    for(let i=0;i<3;i++){let old=(await ref.get()).val(),next=policy.bind(old,request,Date.now());if(!next)fail('full');try{await backend.backup(item.source.name,item.hash,old)}catch{fail('backup_failed')};let prior=JSON.stringify(old),matched=false;
-     let tx=await ref.transaction(v=>{if(v===null)return null;if(JSON.stringify(v)!==prior)return;matched=true;return policy.bind(v,request,Date.now());});if(tx.committed&&matched&&tx.snapshot.val()){record=tx.snapshot.val();break;}}
+    for(let i=0;i<3;i++){let old=(await ref.get()).val(),next=bindHappBrowser(old,request,Date.now());if(!next)fail('full');try{await backend.backup(item.source.name,item.hash,old)}catch{fail('backup_failed')};let prior=JSON.stringify(old),matched=false;
+     let tx=await ref.transaction(v=>{if(v===null)return null;if(JSON.stringify(v)!==prior)return;matched=true;return bindHappBrowser(v,request,Date.now());});if(tx.committed&&matched&&tx.snapshot.val()){record=tx.snapshot.val();break;}}
     if(!record)fail('unavailable');
     let existing=[...sessions].find(([t,s])=>s.project===item.source.name&&s.hash===item.hash&&s.deviceHash===deviceHash&&s.claimedAt===record.devices[deviceHash].claimedAt);
     let token=existing?.[0]||crypto.randomBytes(32).toString('hex'),uuid=existing?.[1].uuid||crypto.randomUUID(),email=sha(item.source.name+':'+item.hash+':'+deviceHash+':'+record.devices[deviceHash].claimedAt).slice(0,40)+'@mizze';
-    await gateway.add(uuid,email);let s={project:item.source.name,hash:item.hash,deviceHash,claimedAt:record.devices[deviceHash].claimedAt,uuid,email,expiresAt:record.expiresAt};sessions.set(token,s);trackSession(token,s);persist();grants.delete(b.grant);
+    let s=existing?.[1];
+    if(!s){
+     s={project:item.source.name,hash:item.hash,deviceHash,claimedAt:record.devices[deviceHash].claimedAt,uuid,email,expiresAt:record.expiresAt};
+     sessions.set(token,s);trackSession(token,s);persist();
+    }
+    await ensure(s);
+    if(!activeSession(token,s))fail('unauthorized');
+    grants.delete(b.grant);
     remember(res,item,deviceHash,record,g.label||'Key đã lưu',url);json(res,200,connectionView(token,s,url));return;
    }
-   if(req.method==='GET'&&url.pathname.startsWith('/sub/')){let token=url.pathname.slice(5),s=sessions.get(token);if(!s)fail('unauthorized');await ensure(s);
+   if(req.method==='GET'&&url.pathname.startsWith('/sub/')){let token=url.pathname.slice(5),s=sessions.get(token);if(!s)fail('unauthorized');const record=await ensure(s);
+    if(!activeSession(token,s))fail('unauthorized');
+    res.setHeader('subscription-always-hwid-enable','1');
+    const denied=await bindHappDevice(token,s,req,record);
+    if(denied)return json(res,403,{error:denied});
     res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','profile-title':'Mizze','hide-settings':'1','subscription-userinfo':'upload=0; download=0; total=0; expire='+Math.floor(s.expiresAt/1000),'profile-update-interval':'1'});res.end((publicOrigin?gateway.wsUri(s.uuid,new URL(publicOrigin).hostname,token):gateway.uri(s.uuid,url.hostname))+'\n');return;}
 
    if(url.pathname==='/api/settings'&&['GET','POST'].includes(req.method)){const s=session(req);await ensure(s);const scope=scopeOf(s);if(req.method==='POST'){const b=await body(req);try{await autoOff.configure(scope,b.mode,b.seconds)}catch(e){if(e.message==='invalid_seconds'){json(res,400,{error:'Nhập số giây từ 0 đến 3600, tối đa một chữ số thập phân.'});return;}throw e;}}json(res,200,{ok:true,timing:autoOff.describe(scope),control:keyControls.get(scope)||{fakelag:false,ghost:false,telekill:false},receivedAt:Date.now()});return;}
@@ -128,7 +185,8 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
  });
 
  server.on('upgrade',async(req,socket,head)=>{let upstream;try{
-  const url=new URL(req.url,'http://'+req.headers.host);if(!hosts().has(url.hostname)||!/^\/tunnel\/[a-f0-9]{64}$/.test(url.pathname))throw Error('path');const token=url.pathname.split('/')[2],s=sessions.get(token);if(!s||s.expiresAt<=Date.now()||!gateway.ready)throw Error('auth');await ensure(s);
+  const url=new URL(req.url,'http://'+req.headers.host);if(!hosts().has(url.hostname)||!/^\/tunnel\/[a-f0-9]{64}$/.test(url.pathname))throw Error('path');const token=url.pathname.split('/')[2],s=sessions.get(token);if(!s?.happDeviceHash||s.expiresAt<=Date.now()||!gateway.ready)throw Error('auth');await ensure(s);
+  if(!activeSession(token,s))throw Error('auth');
   if([...wsConnections.values()].reduce((n,x)=>n+x.size,0)>=128)throw Error('busy');let set=wsConnections.get(token);if(!set)wsConnections.set(token,set=new Set());set.add(socket);socket.on('close',()=>{set.delete(socket);if(upstream)upstream.destroy()});socket.on('error',()=>{if(upstream)upstream.destroy()});
   upstream=net.connect(settingsUsed.wsPort||18445,'127.0.0.1');upstream.on('error',()=>socket.destroy());upstream.on('close',()=>socket.destroy());upstream.on('connect',()=>{let headers='GET /mizze-tunnel HTTP/1.1\r\nHost: 127.0.0.1\r\n';for(let [k,v]of Object.entries(req.headers))if(k!=='host')headers+=k+': '+v+'\r\n';upstream.write(headers+'\r\n');if(head.length)upstream.write(head);socket.pipe(upstream).pipe(socket);});
  }catch{socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');if(upstream)upstream.destroy();}});
@@ -137,7 +195,8 @@ initialBackup();const settingsUsed={...settings,...options.settings};const proxy
  console.log('Mizze Connect ready: http://localhost:'+settingsUsed.webPort);console.log('Gateway TCP/UDP: '+settingsUsed.tunnelPort+'; PC and shortcut controls are isolated per key.');console.log('Local phone URLs: '+lanIps().map(ip=>'http://'+ip+':'+settingsUsed.webPort).join(', '));
  if(options.writeShortcut!==false)fs.writeFileSync(path.join(root,'private/open-pc.url'),'[InternetShortcut]\r\nURL=http://localhost:'+settingsUsed.webPort+'/pc#'+auth.adminToken+'\r\n');
  const pulse=setInterval(emit,5000),watch=setInterval(async()=>{if(checking)return;checking=true;try{for(const [token,s]of sessions){try{if(!await authorize(s))await deadlines.revoke(token);else if(gateway.ready)await ensure(s);}catch{gateway.maintenanceErrors=(gateway.maintenanceErrors||0)+1;await deadlines.revoke(token).catch(()=>{});}}}finally{checking=false}},options.recheckIntervalMs||30000);
- for(const [token,s]of sessions){trackSession(token,s);try{if(await authorize(s))await gateway.add(s.uuid,s.email);else await deadlines.revoke(token)}catch{await deadlines.revoke(token).catch(()=>{})}}
+ for(const [token,s]of sessions)trackSession(token,s);
+ for(const [token,s]of sessions){try{await ensure(s)}catch{await deadlines.revoke(token).catch(()=>{})}}
 
  async function stop(exit=false){deadlines.close();autoOff.close();clearInterval(pulse);clearInterval(watch);for(const res of streams.keys())res.end();for(const token of wsConnections.keys())closeWs(token);await new Promise(ok=>server.close(ok));await gateway.stop();if(exit)process.exit(0)}const sig=()=>stop(true);process.on('SIGINT',sig);process.on('SIGTERM',sig);return {server,gateway,autoOff,stop:async()=>{process.off('SIGINT',sig);process.off('SIGTERM',sig);await stop();}};
 }

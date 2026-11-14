@@ -12,7 +12,7 @@ class FakeGateway{
 async function fixture({durationMs=3600000,recheckIntervalMs=3600000}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'mizze-security-'));fs.mkdirSync(path.join(root,'private'));
  fs.copyFileSync(path.join(__dirname,'../backup.py'),path.join(root,'backup.py'));
- let record={protocol:9,credentialMode:2,enabled:true,maxDevices:1,timeMode:'firstUse',durationMs,createdAt:Date.now(),activatedAt:0,expiresAt:0},offline=false,lookups=0;
+ let record={protocol:9,credentialMode:2,enabled:true,maxDevices:3,timeMode:'firstUse',durationMs,createdAt:Date.now(),activatedAt:0,expiresAt:0},offline=false,lookups=0;
  const ref={get:async()=>{if(offline)throw Error('database unavailable');return {val:()=>structuredClone(record)}},transaction:async f=>{let next=f(structuredClone(record));if(!next)return {committed:false};record=next;return {committed:true,snapshot:{val:()=>structuredClone(record)}}}};
  const source={name:'isolated-security-test',db:{ref:()=>ref}};
  const backend={sources:[source],lookup:async({key})=>{lookups++;return key==='LOCAL-TEST-ONLY'?{source,hash:'f'.repeat(64),record:structuredClone(record)}:null},backup:async()=>{}};
@@ -26,9 +26,16 @@ test('AimLag API authenticates, validates, persists server state and disables im
  const f=await fixture();try{
   assert.equal((await f.post('/api/aimlag',{enabled:true})).status,401);
   const {value:v}=await f.provision();
-  const subscription=await fetch(f.base+'/sub/'+v.token);
+  const url=f.base+'/sub/'+v.token;
+  const firstDevice={headers:{'x-hwid':'test-iphone-one'}};
+  assert.equal((await fetch(url)).status,403);
+  const subscription=await fetch(url,firstDevice);
   assert.equal(subscription.status,200);
   assert.equal(subscription.headers.get('hide-settings'),'1');
+  assert.equal(subscription.headers.get('subscription-always-hwid-enable'),'1');
+  assert.equal((await fetch(url,{headers:{'x-hwid':'test-iphone-two'}})).status,403);
+  assert.equal((await fetch(url,firstDevice)).status,200);
+  assert.equal((await f.post('/api/login',{key:'LOCAL-TEST-ONLY',deviceId:'b'.repeat(32)})).status,400);
   assert.equal((await f.post('/api/aimlag',{enabled:'yes'},v.token)).status,400);
   assert.equal((await f.post('/api/aimlag',{enabled:true,other:true},v.token)).status,400);
   let r=await f.post('/api/aimlag',{enabled:true},v.token);assert.equal(r.status,200);assert.equal((await r.json()).aimlag.enabled,true);

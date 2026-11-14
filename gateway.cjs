@@ -19,7 +19,23 @@ class Gateway{
    if(!result.stdout.includes('Added 2 user(s)'))throw Error('gateway_provision_failed');this.peers.set(email,{relay:peer,tag});this.users.set(email,uuid);
   }catch(e){await peer.close();try{await exec(this.exe,['api','rmrules','--server=127.0.0.1:'+this.cfg.apiPort,tag],{windowsHide:true,timeout:5000});await exec(this.exe,['api','rmo','--server=127.0.0.1:'+this.cfg.apiPort,tag],{windowsHide:true,timeout:5000});}catch{}throw e;}
  }
- async remove(email){if(!this.users.has(email))return;const peer=this.peers.get(email);if(peer)await peer.relay.close();for(const tag of ['mizze-happ','mizze-happ-ws']){let r=await exec(this.exe,['api','rmu','--server=127.0.0.1:'+this.cfg.apiPort,'-tag='+tag,email],{windowsHide:true,timeout:10000});if(!r.stdout.includes('Removed 1 user(s)'))throw Error('gateway_revoke_failed');}if(peer){await exec(this.exe,['api','rmrules','--server=127.0.0.1:'+this.cfg.apiPort,peer.tag],{windowsHide:true,timeout:10000});await exec(this.exe,['api','rmo','--server=127.0.0.1:'+this.cfg.apiPort,peer.tag],{windowsHide:true,timeout:10000});}this.peers.delete(email);this.users.delete(email);}
+ async remove(email){
+  await this.inFlight.get(email)?.catch(()=>{});
+  if(!this.users.has(email))return;
+  const peer=this.peers.get(email);
+  if(peer)await peer.relay.close();
+  const flags=['--server=127.0.0.1:'+this.cfg.apiPort], options={windowsHide:true,timeout:10000};
+  for(const tag of ['mizze-happ','mizze-happ-ws']){
+   const result=await exec(this.exe,['api','rmu',...flags,'-tag='+tag,email],options);
+   if(!/Removed [01] user\(s\)/.test(result.stdout))throw Error('gateway_revoke_failed');
+  }
+  if(peer){
+   await exec(this.exe,['api','rmrules',...flags,peer.tag],options);
+   await exec(this.exe,['api','rmo',...flags,peer.tag],options);
+  }
+  this.peers.delete(email);
+  this.users.delete(email);
+ }
  setUserState(email,state){const peer=this.peers.get(email);if(!peer)throw Error('gateway_not_ready');peer.relay.setState(state);}
  setUserAimLag(email,enabled){const gate=this.peers.get(email)?.relay.gate;if(!gate)throw Error('gateway_not_ready');gate.setAimLag(enabled);}
  aimLagState(email){return this.peers.get(email)?.relay.gate.aimlag.describe()||{supported:true,enabled:false,holding:false,experimental:true};}
