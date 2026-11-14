@@ -3,6 +3,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), net = require('node:net'), crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { Gateway } = require('./gateway.cjs');
+const { createRequestLimit } = require('./request-limit.cjs');
 const site = require('./mizze.config.cjs');
 
 const root = __dirname, privateDir = path.join(root, 'private');
@@ -20,6 +21,8 @@ let origin = cfg.quickTunnel ? null : (cfg.publicOrigin || site.VPS_ORIGIN);
 let gateway, tunnel, closing = false;
 const startedAt = Date.now(), sockets = new Set();
 const transport = { accepted: 0, rejected: 0, upstreamErrors: 0 };
+const limit = createRequestLimit(4);
+const quotas = { '/api/state': 1200, '/api/config': 240, '/healthz': 600, '/sub': 600 };
 
 const FILES = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'application/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
 
@@ -41,6 +44,14 @@ const server = http.createServer((req, res) => {
     if (closing) return json(res, 503, { error: 'Máy chủ đang dừng.' });
     if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Phương thức không hợp lệ.' });
 
+    const bucket = url.pathname.startsWith('/sub/') ? '/sub' : url.pathname;
+    if (Object.hasOwn(quotas, bucket)) {
+      const retry = limit(bucket, quotas[bucket]);
+      if (retry) {
+        res.setHeader('Retry-After', String(retry));
+        return json(res, 429, { error: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.' });
+      }
+    }
     if (url.pathname === '/healthz') return json(res, 200, { ok: true, gateway: gateway?.ready === true });
     if (url.pathname === '/api/state') return json(res, 200, state());
     if (url.pathname === '/api/config') {
@@ -50,7 +61,7 @@ const server = http.createServer((req, res) => {
     }
     if (url.pathname === '/sub/' + session.token) {
       if (!origin || !gateway?.ready) return json(res, 503, { error: 'Máy chủ chưa sẵn sàng.' });
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'profile-title': profile, 'profile-update-interval': '12' });
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'profile-title': profile, 'profile-update-interval': '12', 'Hide-Settings': '1' });
       return res.end(gateway.wsUri(session.uuid, new URL(origin).hostname, session.token, profile) + '\n');
     }
     const file = FILES[url.pathname];

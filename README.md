@@ -19,8 +19,17 @@ tự sinh lần đầu chạy trong `private/` trên VPS và không bao giờ l�
 
 ## Vercel
 
-Import repo, giữ nguyên `vercel.json` (build `node build.cjs`, output `dist`). Không cần thêm biến môi trường.
-Hàm `api/gateway.js` chuyển tiếp `/api/state`, `/api/config`, `/sub/…` tới `VPS_ORIGIN`.
+Trang web chạy tại `https://mizzedongnhathoangha.com`. Vercel build bằng `node build.cjs` và xuất `dist`.
+Hàm `api/gateway.js` chuyển tiếp `/api/state`, `/api/config`, `/sub/…` tới gateway trên VPS.
+Khi đổi địa chỉ gateway, đặt biến môi trường `VPS_ORIGIN` trong Vercel và đặt `publicOrigin` tương ứng trên VPS.
+Hai giá trị này phải trỏ tới tên miền HTTPS của Cloudflare Tunnel trên VPS, tách khỏi tên miền web.
+
+Phản hồi đăng ký gửi `Hide-Settings: 1` để Happ ẩn phần xem và sửa cấu hình máy chủ.
+Hồ sơ đã thêm cần bấm cập nhật trong Happ sau khi cập nhật VPS. Nếu hồ sơ trỏ đến tên miền cũ đã ngừng hoạt động, hãy thêm lại từ web.
+Đây là tùy chọn giao diện Happ. Ai có URL đăng ký vẫn có thể truy cập phản hồi của URL đó.
+
+Vercel tự giảm thiểu DDoS. Hàm gateway có giới hạn theo IP và số yêu cầu đồng thời trên từng instance.
+VPS có giới hạn tổng theo endpoint mỗi phút, trả 429 kèm `Retry-After` khi quá ngưỡng.
 
 ## VPS Windows
 

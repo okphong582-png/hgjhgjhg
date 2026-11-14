@@ -54,5 +54,5 @@ $('copy').onclick = async () => {
 };
 
 refresh();
-setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+setInterval(() => { if (!document.hidden) refresh(); }, 10000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
