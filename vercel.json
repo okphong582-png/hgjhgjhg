@@ -2,26 +2,12 @@
   "version": 2,
   "framework": null,
   "installCommand": "echo skip",
-  "buildCommand": "node build.cjs",
+  "buildCommand": "mkdir -p dist && cp -r index.html media dist/",
   "outputDirectory": "dist",
-  "functions": {
-    "api/gateway.js": { "maxDuration": 20, "excludeFiles": "{web,dist}/**" }
-  },
-  "rewrites": [
-    { "source": "/connect.html", "destination": "/index.html" },
-    { "source": "/api/:name(info|login|provision|state|aimlag|resume|forget|happ-link)", "destination": "/api/gateway?route=/api/:name" },
-    { "source": "/healthz", "destination": "/api/gateway?route=/api/info" },
-    { "source": "/sub/:token", "destination": "/api/gateway?route=/sub/:token" }
-  ],
   "headers": [
     {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" },
-        { "key": "Referrer-Policy", "value": "no-referrer" },
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
-      ]
+      "source": "/media/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }]
     }
   ]
 }
